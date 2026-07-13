@@ -1,6 +1,6 @@
 [
   {
-    "name": "Kamino Finance / klend",
+    "name": "kamino-finance/klend",
     "source": "https://github.com/Kamino-Finance/klend",
     "commit": "4c7653a12276ded3bcaf95a3474973ca135ca810",
     "directory": "klend",
@@ -11,7 +11,7 @@
     ]
   },
   {
-    "name": "Orca / whirlpools",
+    "name": "orca-so/whirlpools",
     "source": "https://github.com/orca-so/whirlpools",
     "commit": "a119d79bada4e730fef791cac6adb669405a21de",
     "directory": "whirlpools",
@@ -31,7 +31,7 @@
     ]
   },
   {
-    "name": "Drift Labs / protocol-v2",
+    "name": "drift-labs/protocol-v2",
     "source": "https://github.com/drift-labs/protocol-v2",
     "commit": "0ae3e3b1db782a6765c3525b3dec38ad4d9d3a62",
     "directory": "protocol-v2",
@@ -50,7 +50,7 @@
     ]
   },
   {
-    "name": "Project Zero / marginfi-v2",
+    "name": "0dotxyz/marginfi-v2",
     "source": "https://github.com/0dotxyz/marginfi-v2",
     "commit": "843aa82df852b9e9a3c555e67ffd12aa53f4805b",
     "directory": "marginfi-v2",
@@ -72,7 +72,7 @@
     ]
   },
   {
-    "name": "Raydium / raydium-clmm",
+    "name": "raydium-io/raydium-clmm",
     "source": "https://github.com/raydium-io/raydium-clmm",
     "commit": "a0c0c181dfc759a1012e8e6172cc56516c9d57bc",
     "directory": "raydium-clmm",
@@ -82,7 +82,7 @@
     ]
   },
   {
-    "name": "Raydium / raydium-cp-swap",
+    "name": "raydium-io/raydium-cp-swap",
     "source": "https://github.com/raydium-io/raydium-cp-swap",
     "commit": "609780f165d234a0aa9699cac90178a3fa36fd43",
     "directory": "raydium-cp-swap",
@@ -92,7 +92,7 @@
     ]
   },
   {
-    "name": "Meteora / damm-v2",
+    "name": "meteoraag/damm-v2",
     "source": "https://github.com/MeteoraAg/damm-v2",
     "commit": "58a13fcf45516a9f27f2bd2a2056fb66673454e0",
     "directory": "damm-v2",
@@ -106,7 +106,7 @@
     ]
   },
   {
-    "name": "Meteora / dynamic-bonding-curve",
+    "name": "meteoraag/dynamic-bonding-curve",
     "source": "https://github.com/MeteoraAg/dynamic-bonding-curve",
     "commit": "b4f954733f0e88258f1eb3f0eff75e4314c9610c",
     "directory": "dynamic-bonding-curve",
@@ -125,7 +125,7 @@
     ]
   },
   {
-    "name": "Marinade Finance / liquid-staking-program",
+    "name": "marinade-finance/liquid-staking-program",
     "source": "https://github.com/marinade-finance/liquid-staking-program",
     "commit": "26147376b75d8c971963da458623e646f2795e15",
     "directory": "liquid-staking-program",
@@ -135,7 +135,7 @@
     ]
   },
   {
-    "name": "Jito Foundation / stakenet",
+    "name": "jito-foundation/stakenet",
     "source": "https://github.com/jito-foundation/stakenet",
     "commit": "0a708371f5859dabe5df0902dfc565add7282007",
     "directory": "stakenet",
@@ -150,7 +150,7 @@
     ]
   },
   {
-    "name": "blockworks-foundation / mango-v4",
+    "name": "blockworks-foundation/mango-v4",
     "source": "https://github.com/blockworks-foundation/mango-v4",
     "commit": "ee671d24bb4f9386adc2d146f5180d4760838222",
     "directory": "mango-v4",
@@ -166,7 +166,7 @@
     ]
   },
   {
-    "name": "gmsol-labs / gmx-solana",
+    "name": "gmsol-labs/gmx-solana",
     "source": "https://github.com/gmsol-labs/gmx-solana",
     "commit": "1156514934791a22fb5576799f3b8912de67a12e",
     "directory": "gmx-solana",
@@ -181,7 +181,7 @@
     ]
   },
   {
-    "name": "openbook-dex / openbook-v2",
+    "name": "openbook-dex/openbook-v2",
     "source": "https://github.com/openbook-dex/openbook-v2",
     "commit": "f3e17421e675b083b584867594bf3cf4f675d156",
     "directory": "openbook-v2",
@@ -192,7 +192,7 @@
     ]
   },
   {
-    "name": "ONRE / onre-sol",
+    "name": "onre-finance/onre-sol",
     "source": "https://github.com/onre-finance/onre-sol",
     "commit": "361cd588ba48b89a44236801140cdc2b5d110251",
     "directory": "onre-sol",
@@ -203,7 +203,7 @@
     ]
   },
   {
-    "name": "Helium / helium-program-library",
+    "name": "helium/helium-program-library",
     "source": "https://github.com/helium/helium-program-library",
     "commit": "3fa2a7c3f0405f90440f599f8d288361b6a2a2f3",
     "directory": "helium-program-library",
@@ -254,7 +254,7 @@
     ]
   },
   {
-    "name": "Wormhole / native-token-transfers",
+    "name": "wormhole-foundation/native-token-transfers",
     "source": "https://github.com/wormhole-foundation/native-token-transfers",
     "commit": "3fb0fc97b65246167de14bcdaaf3c4eadba8927b",
     "directory": "native-token-transfers",
@@ -279,7 +279,7 @@
     ]
   },
   {
-    "name": "Squads Protocol / v4",
+    "name": "squads-protocol/v4",
     "source": "https://github.com/Squads-Protocol/v4",
     "commit": "edbca83427b10cbe58bf65fc9b597e8eb7b17cc1",
     "directory": "v4",
