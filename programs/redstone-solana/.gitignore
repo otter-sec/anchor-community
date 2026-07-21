@@ -1,0 +1,15 @@
+example-keypair.json
+debug/
+target/
+
+**/*.rs.bk
+
+*.pdb
+
+.anchor
+.DS_Store
+target
+**/*.rs.bk
+node_modules
+test-ledger
+.yarn

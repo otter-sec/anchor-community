@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "cli",
+    "cron",
+    "plugin",
+    "programs/*",
+    "relayer",
+    "sdk",
+    "utils"
+]
+
+[profile.release]
+overflow-checks = true

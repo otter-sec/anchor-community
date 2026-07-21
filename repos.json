@@ -125,16 +125,6 @@
     ]
   },
   {
-    "name": "marinade-finance/liquid-staking-program",
-    "source": "https://github.com/marinade-finance/liquid-staking-program",
-    "commit": "26147376b75d8c971963da458623e646f2795e15",
-    "directory": "liquid-staking-program",
-    "build_command": "anchor build",
-    "ignored": [
-      "target"
-    ]
-  },
-  {
     "name": "jito-foundation/stakenet",
     "source": "https://github.com/jito-foundation/stakenet",
     "commit": "0a708371f5859dabe5df0902dfc565add7282007",
@@ -279,6 +269,18 @@
     ]
   },
   {
+    "name": "instadapp/fluid-solana-programs",
+    "source": "https://github.com/Instadapp/fluid-solana-programs",
+    "commit": "626b177f235224bc5d074d39439cd2558f542886",
+    "directory": "fluid-solana-programs",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target",
+      "ts-sdk",
+      "test-utils/typescript"
+    ]
+  },
+  {
     "name": "squads-protocol/v4",
     "source": "https://github.com/Squads-Protocol/v4",
     "commit": "edbca83427b10cbe58bf65fc9b597e8eb7b17cc1",
@@ -288,6 +290,358 @@
       "app",
       "audits",
       "target"
+    ]
+  },
+  {
+    "name": "exponent-finance/exponent-core",
+    "source": "https://github.com/exponent-finance/exponent-core",
+    "commit": "2897c660eeef647002b62ba971e19457182e0b37",
+    "directory": "exponent-core",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target"
+    ]
+  },
+  {
+    "name": "provenance-io/hastra-sol-vault",
+    "source": "https://github.com/provenance-io/hastra-sol-vault",
+    "commit": "03ea9f478852825a7a01409db768a7593da34486",
+    "directory": "hastra-sol-vault",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target"
+    ]
+  },
+  {
+    "name": "meteoraag/dynamic-fee-sharing",
+    "source": "https://github.com/MeteoraAg/dynamic-fee-sharing",
+    "commit": "f9be4a9a94cf21f1955344bd459eb120e0c8d5af",
+    "directory": "dynamic-fee-sharing",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target",
+      "tests/fixtures/damm_v2.so",
+      "tests/fixtures/dynamic_bonding_curve.so"
+    ]
+  },
+  {
+    "name": "meteoraag/presale",
+    "source": "https://github.com/MeteoraAg/presale",
+    "commit": "2acd7c9c20bada425e9ff493260be4328b350b57",
+    "directory": "presale",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "audits",
+      "target",
+      "programs/presale/tests/fixtures/abcSyangMHdGzUGKhBhKoQzSFdJKUdkPGf5cbXVHpEw.so",
+      "programs/presale/tests/fixtures/metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s.so"
+    ]
+  },
+  {
+    "name": "meteoraag/zap-program",
+    "source": "https://github.com/MeteoraAg/zap-program",
+    "commit": "c8dd95b4327158320238e2c4094507ab33883830",
+    "directory": "zap-program",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target",
+      "tests/fixtures/damm_v2.so",
+      "tests/fixtures/dlmm.so",
+      "tests/fixtures/jupiter.so",
+      "tests/fixtures/token_2022.so",
+      "tests/fixtures/transfer_hook_counter.so"
+    ]
+  },
+  {
+    "name": "marinade-finance/validator-bonds",
+    "source": "https://github.com/marinade-finance/validator-bonds",
+    "commit": "a6bad3d86379ec5086cdd90953c94d9ea769b998",
+    "directory": "validator-bonds",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "fixtures",
+      "packages",
+      "resources",
+      "target",
+      "settlement-pipelines/__tests__/data"
+    ]
+  },
+  {
+    "name": "jito-foundation/jito-programs",
+    "source": "https://github.com/jito-foundation/jito-programs",
+    "commit": "ce1dfb6b3f6c423bf206ec1f24df911d292aa409",
+    "directory": "jito-programs",
+    "build_command": "cd mev-programs && anchor keys sync && anchor build",
+    "ignored": [
+      "example-programs",
+      "mev-programs/target"
+    ]
+  },
+  {
+    "name": "doublezerofoundation/sol-2z-conversion-v1",
+    "source": "https://github.com/doublezerofoundation/sol-2z-conversion-v1",
+    "commit": "1e46ccab44627804944e1678c6ffa7601c2101be",
+    "directory": "sol-2z-conversion-v1",
+    "build_command": "cd on-chain && anchor keys sync && anchor build",
+    "ignored": [
+      "deployment",
+      "docs",
+      "e2e",
+      "off-chain",
+      "on-chain/target"
+    ]
+  },
+  {
+    "name": "meteoraag/reward-pool",
+    "source": "https://github.com/MeteoraAg/reward-pool",
+    "commit": "56291554a72244e36da0e2ac36bc40478894a263",
+    "directory": "reward-pool",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target",
+      "ts-client"
+    ]
+  },
+  {
+    "name": "marinade-finance/vote-aggregator",
+    "source": "https://github.com/marinade-finance/vote-aggregator",
+    "commit": "169b7827e90ea1d4a920178e195167ff0306d4c8",
+    "directory": "vote-aggregator",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target",
+      "tests/fixtures/spl_governance.so"
+    ]
+  },
+  {
+    "name": "kamino-finance/kvault",
+    "source": "https://github.com/Kamino-Finance/kvault",
+    "commit": "1d146d7087a76edbbadc14d848ae14295c0745a4",
+    "directory": "kvault",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target"
+    ]
+  },
+  {
+    "name": "kamino-finance/kfarms",
+    "source": "https://github.com/Kamino-Finance/kfarms",
+    "commit": "2a63e5ab59629c77f8b4043781c1e4b4572c7b60",
+    "directory": "kfarms",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target"
+    ]
+  },
+  {
+    "name": "smartcontractkit/chainlink-ccip",
+    "source": "https://github.com/smartcontractkit/chainlink-ccip",
+    "commit": "aa3224792927b281308ee73a56e08eaaf1a9c2c2",
+    "directory": "chainlink-ccip",
+    "build_command": "cd chains/solana/contracts && anchor keys sync && anchor build",
+    "ignored": [
+      "cmd",
+      "commit",
+      "deployment",
+      "devenv",
+      "docs",
+      "execute",
+      "integration-tests",
+      "internal",
+      "mocks",
+      "pkg",
+      "chains/evm",
+      "chains/solana/deployment",
+      "chains/solana/gobindings",
+      "chains/solana/scripts",
+      "chains/solana/utils",
+      "chains/solana/contracts/target",
+      "chains/solana/contracts/tests"
+    ]
+  },
+  {
+    "name": "goosefx1/gamma-swap",
+    "source": "https://github.com/GooseFX1/gamma-swap",
+    "commit": "2d26a7fa5329fdb82a594e4906b8d8ed3c987eda",
+    "directory": "gamma-swap",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      ".audit",
+      "client",
+      "target",
+      "programs/gamma/tests/fixtures/kamino.so"
+    ]
+  },
+  {
+    "name": "krystaldefi/krystal-auto-vault",
+    "source": "https://github.com/KrystalDeFi/krystal-auto-vault",
+    "commit": "08c5d3df632fc4c214bd40062876de34b20ced1d",
+    "directory": "krystal-auto-vault",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target"
+    ]
+  },
+  {
+    "name": "marlinprotocol/oyster-solana-contracts",
+    "source": "https://github.com/marlinprotocol/oyster-solana-contracts",
+    "commit": "73eb72337cfe4985b4cc532b0f45287d9982a5b8",
+    "directory": "oyster-solana",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "app",
+      "target"
+    ]
+  },
+  {
+    "name": "pyth-network/governance",
+    "source": "https://github.com/pyth-network/governance",
+    "commit": "68a9a36ec3d41364490e71b056b422c99f13e0cf",
+    "directory": "pyth-governance",
+    "build_command": "cd staking && anchor keys sync && anchor build",
+    "ignored": [
+      "docs",
+      "frontend",
+      "metrics",
+      "package-lock.json",
+      "staking/app",
+      "staking/target",
+      "staking/integration-tests/fixtures/governance/governance.so",
+      "staking/tests/programs/chat.so",
+      "staking/tests/programs/governance.so"
+    ]
+  },
+  {
+    "name": "pyth-network/program-authority-escrow",
+    "source": "https://github.com/pyth-network/program-authority-escrow",
+    "commit": "4ea67dfbc8b5bd88c5946acc635eb8dce018247e",
+    "directory": "pyth-authority-escrow",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target",
+      "tests/fixtures/helloworld.so"
+    ]
+  },
+  {
+    "name": "redstone-finance/solana-connector",
+    "source": "https://github.com/redstone-finance/solana-connector",
+    "commit": "443655d9e7dae3d30445ad030c2bae41988aa08e",
+    "directory": "redstone-solana",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      ".pnp.cjs",
+      ".pnp.loader.mjs",
+      "pusher",
+      "target"
+    ]
+  },
+  {
+    "name": "relayprotocol/relay-settlement",
+    "source": "https://github.com/relayprotocol/relay-settlement",
+    "commit": "98ad1a0af009c247fb85205c2119f7371e684520",
+    "directory": "relay-settlement",
+    "build_command": "cd packages/depository/packages/solana-vm && anchor keys sync && anchor build",
+    "ignored": [
+      ".yarn",
+      "crates",
+      "docs",
+      "smart-contracts",
+      "packages/abis",
+      "packages/eslint-config",
+      "packages/hub-client",
+      "packages/indexer",
+      "packages/indexer-ui",
+      "packages/lit-actions",
+      "packages/lit-allocator",
+      "packages/lit-deposit-address",
+      "packages/lit-helpers",
+      "packages/multisig-tools",
+      "packages/networks",
+      "packages/sdk",
+      "packages/tsconfig",
+      "packages/depository/packages/ethereum-vm",
+      "packages/depository/packages/ton-vm",
+      "packages/depository/packages/solana-vm/target"
+    ]
+  },
+  {
+    "name": "securitize-io/rwa-rbac",
+    "source": "https://github.com/securitize-io/rwa-rbac",
+    "commit": "971629592b57be4af83aa50f427fab1d11eff5c9",
+    "directory": "rwa-rbac",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "client",
+      "deps",
+      "target"
+    ]
+  },
+  {
+    "name": "wen-community/wen-program-library",
+    "source": "https://github.com/wen-community/wen-program-library",
+    "commit": "c4f8047db6acf1499f7bd349b14943c611e2b5f2",
+    "directory": "wen-program-library",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "clients",
+      "target",
+      "wpl_cli",
+      "yarn-error.log"
+    ]
+  },
+  {
+    "name": "wormhole-foundation/multigov",
+    "source": "https://github.com/wormhole-foundation/multigov",
+    "commit": "228ddee41a0abae98f611951a60d32a3d2c7df3b",
+    "directory": "multigov",
+    "build_command": "cd solana && anchor keys sync && anchor build",
+    "ignored": [
+      "audits",
+      "evm",
+      "integration-tests",
+      "solana/app",
+      "solana/target",
+      "solana/tests/artifacts"
+    ]
+  },
+  {
+    "name": "faircrypto/sol-xen",
+    "source": "https://github.com/FairCrypto/sol-xen",
+    "commit": "25698a40a1d2249f0dcb46e01c37d7e7bbf57eb2",
+    "directory": "sol-xen",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "admin",
+      "client",
+      "images",
+      "release",
+      "target",
+      "package-lock.json",
+      "yarn.lock"
+    ]
+  },
+  {
+    "name": "open-clockwork/clockwork",
+    "source": "https://github.com/open-clockwork/clockwork",
+    "commit": "84f200aa089a0b1ac95223cb78d96482a9127e23",
+    "directory": "clockwork",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "audits",
+      "target"
+    ]
+  },
+  {
+    "name": "uncx-network/raydium-amm-lp-locker",
+    "source": "https://github.com/uncx-network/raydium-amm-lp-locker",
+    "commit": "2e3d41f1240b11e2b2c8d23ec4d3cab9a3c60f29",
+    "directory": "raydium-amm-lp-locker",
+    "build_command": "anchor keys sync && anchor build",
+    "ignored": [
+      "target",
+      "tests/raydium.so",
+      "uncx_solana_lp_locker.so",
+      "programs/uncx-solana-lp-locker/tests/fixtures"
     ]
   }
 ]

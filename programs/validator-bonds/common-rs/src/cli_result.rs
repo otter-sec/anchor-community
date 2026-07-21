@@ -1,0 +1,85 @@
+use log::error;
+use std::fmt;
+use std::process::{ExitCode, Termination};
+
+/// For wrapping the main function to be able to return a Result
+/// with specific program exit code you need to use wrapping function calls like this
+/// see https://github.com/dtolnay/anyhow/issues/247
+///
+/// fn main() -> CliResult {
+///     CliResult(real_main())
+/// }
+///
+/// fn real_main() -> anyhow::Result<()> {
+///     Err(CliError::retry_able(anyhow::anyhow!("This is a retry-able error")))
+/// }
+pub struct CliResult(pub anyhow::Result<()>);
+
+impl Termination for CliResult {
+    fn report(self) -> ExitCode {
+        match self.0 {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(err) => {
+                if let Ok(cli_error) = err.downcast::<CliError>() {
+                    cli_error.into()
+                } else {
+                    ExitCode::FAILURE
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CliError {
+    Critical(anyhow::Error),
+    Warning(anyhow::Error),
+    RetryAble(anyhow::Error),
+}
+
+impl CliError {
+    pub fn critical<E: Into<anyhow::Error>>(err: E) -> CliError {
+        CliError::Critical(err.into())
+    }
+
+    pub fn warning<E: Into<anyhow::Error>>(err: E) -> CliError {
+        CliError::Warning(err.into())
+    }
+
+    pub fn retry_able<E: Into<anyhow::Error>>(err: E) -> CliError {
+        CliError::RetryAble(err.into())
+    }
+}
+
+impl std::error::Error for CliError {}
+
+impl fmt::Display for CliError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CliError::Critical(err) => write!(f, "[Critical] {err}"),
+            CliError::Warning(err) => write!(f, "[Warning] {err}"),
+            CliError::RetryAble(err) => write!(f, "[RetryAble] {err}"),
+        }
+    }
+}
+
+impl From<CliError> for ExitCode {
+    fn from(err: CliError) -> ExitCode {
+        match err {
+            // default exit code for failure is 1
+            // we use 2 to show it's an error from our CLI
+            CliError::Critical(err) => {
+                error!("{err:?}");
+                ExitCode::from(2)
+            }
+            CliError::Warning(err) => {
+                error!("{err:?}");
+                ExitCode::from(99)
+            }
+            CliError::RetryAble(err) => {
+                error!("{err:?}");
+                ExitCode::from(100)
+            }
+        }
+    }
+}

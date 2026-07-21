@@ -1,0 +1,91 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`join_clan instruction Works 1`] = `
+{
+  "data": [
+    218,
+    113,
+    190,
+    239,
+    4,
+    91,
+    106,
+    206,
+    16,
+    39,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "2T5rQ4Crtv4yxxs5myXQEPXyanwMnkimseRon7pzPRvf",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "7RLeU6Hv1Wzd6GpYiVcm4FgH9DQpJxAeGpWhWgmBtrZu",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "DWCHP6gPZeE7mggkrFtbrcNjn7NhKSrwwhanrFJBecvZ",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "BzVuuiNRYp5NCkTBR7KpM64c3EJ5HjuHEzGqX1nbWWUN",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "3ZBs66CJUG2uAxbiYDSRK7njC99Up1neQ2RviK33sKSB",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "5ABXgPnaXC4D8LpYfNaC21cYeyxASTfJEAPK3zXyi2i7",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "3QtBFxyHYDWKL49NzcfmWD2DsTUwKUPe4YWxLSw9Mbht",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "4dX2rDrR3pkixrBry19YnU1jck6mtfGziESaNhWZHzrE",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "BG6spgWJccBj7Y8VHfdhx4HXLgyzqecTfS5Rjx2wLhrT",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "FWFMJ1qeKUBqk9Mnuigf6Ln3PaPuBD69FLxZeB66YoCP",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "ApnCQDSeiRRbc4Bq9rNebfnyQdaNyM1suSbZ1vCmSUaF",
+    },
+    {
+      "isSigner": true,
+      "isWritable": true,
+      "pubkey": "11111111111111111111111111111111",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "11111111111111111111111111111111",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "B4weSxQ3gTqUK3DtH4MaRdd7CCpa9Ncb7kPcNtEJXn7P",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;

@@ -1,0 +1,48 @@
+{
+  "name": "@coral-xyz/spl-governance",
+  "description": "Anchor client for Solana Program Library Governance Program",
+  "version": "3.1.1",
+  "author": "Solana Labs Maintainers <maintainers@solanalabs.com>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/solana-labs/solana-program-library.git"
+  },
+  "type": "module",
+  "main": "./dist/cjs/index.cjs",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.cts",
+        "default": "./dist/cjs/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "=0.29.0",
+    "@native-to-anchor/buffer-layout": "=0.1.0"
+  },
+  "devDependencies": {
+    "@solana/web3.js": "1.90.2",
+    "@tanstack/config": "^0.6.1",
+    "@types/node": "^20.19.39",
+    "bn.js": "^5.2.3",
+    "vite": "^5.4.21",
+    "vite-plugin-node-polyfills": "^0.22.0"
+  },
+  "scripts": {
+    "build": "vite build"
+  },
+  "peerDependencies": {
+    "@solana/web3.js": "1.90.2",
+    "bn.js": "^5.2.1",
+    "vite-plugin-node-polyfills": "^0.22.0"
+  }
+}

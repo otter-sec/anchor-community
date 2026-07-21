@@ -1,0 +1,225 @@
+agents:
+  queue: "snapshots"
+
+env:
+  gs_bucket: gs://marinade-validator-bonds-mainnet
+  SLACK_API: https://slack.com/api/chat.postMessage
+
+steps:
+  - label: ":closed_lock_with_key: Concurrency gate fund-settlements lock"
+    command: echo "--> Start of concurrency gate"
+    concurrency_group: 'validator-bonds/fund-settlements-${CLAIM_TYPE}'
+    concurrency: 1
+
+  - wait: ~
+
+  - input: "What is the Bonds Config type to fund?"
+    fields:
+      - select: "Claim type"
+        key: "claim_type"
+        options:
+          - label: "Unified Settlements"
+            value: "unified"
+          - label: "Institutional Settlements"
+            value: "institutional"
+    if: "build.env('CLAIM_TYPE') == null"
+    blocked_state: running
+
+  - wait: ~
+
+  - label: ":black_nib: Env variables setup: Fund Settlements"
+    key: "setup-env-fund"
+    commands:
+    - |
+      epoch=${EPOCH:-$(buildkite-agent meta-data get epoch || echo "")}
+      if [[ -n "$$epoch" ]]; then
+        buildkite-agent meta-data set --redacted-vars='' epoch "$$epoch"
+      else
+        unset epoch
+      fi
+    - |
+      claim_type=${CLAIM_TYPE:-$(buildkite-agent meta-data get claim_type)}
+      buildkite-agent meta-data set --redacted-vars='' claim_type "$$claim_type"
+      config_pubkey=$(./scripts/bonds-config-pubkey.sh "$$claim_type")
+      buildkite-agent meta-data set --redacted-vars='' config_pubkey "$$config_pubkey"
+    - |
+      slack_feed=$(./scripts/bonds-slack-feed.sh "$$claim_type")
+      buildkite-agent meta-data set --redacted-vars='' slack_feed "$$slack_feed"
+    - |
+      printable_rpc_url=$(./scripts/printable-rpc-url.sh "$$RPC_URL")
+      echo "Epoch: '$${epoch:-unknown}', Claim Type: '$$claim_type'/'$$config_pubkey', Slack Feed: '$$slack_feed'"
+      echo "# RPC_URL='$$printable_rpc_url'"
+
+  - wait: ~
+
+  - label: ":hammer_and_wrench: :rust: Build fund-settlement"
+    commands:
+    - '. "$HOME/.cargo/env"'
+    - 'cargo build --release --bin fund-settlement'
+    artifact_paths:
+      - target/release/fund-settlement
+
+  - label: ":surfer: Loading JSON settlements data"
+    env:
+      past_epochs_to_load: 3
+      # epoch when the contract v2 was deployed, using a different structure of a merkle tree than v1
+      starting_epoch_contract_v2: 640
+    commands:
+    - epoch=$(buildkite-agent meta-data get epoch) || true
+    - |
+      if [[ -z "$$epoch" ]]; then
+        current_epoch=$(curl --silent "$$RPC_URL" -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1, "method":"getEpochInfo"}' | jq '.result.epoch')
+        epochs_start_index=$((current_epoch - past_epochs_to_load))
+        latest_funded_epoch=$((current_epoch - 1))
+      else
+        current_epoch=$$epoch
+        epochs_start_index=$$epoch
+        latest_funded_epoch=$$epoch
+      fi
+    - buildkite-agent meta-data set --redacted-vars='' latest_funded_epoch "$$latest_funded_epoch"
+    - |
+      merkle_trees=$(buildkite-agent artifact search "merkle-trees/*" || echo "")
+      if [[ "x$$merkle_trees" != "x" && ! "$$merkle_trees" =~ 'fatal' ]]; then
+        echo "Merkle trees already downloaded"
+        exit 0
+      fi
+    - |
+      claim_type=$(buildkite-agent meta-data get claim_type)
+      # Build list of prefixes to search: current naming + legacy naming
+      # The "unified" claim type replaced old "bid-psr-distribution" (pipeline unification PR #344),
+      # but past epochs in GCS still have files named "bid-psr-distribution-settlement-merkle-trees.json"
+      prefixes="$$claim_type"
+      if [[ "$$claim_type" == unified* ]]; then
+        prefixes="$$prefixes bid"
+      fi
+    - mkdir ./merkle-trees/
+    - |
+      for epoch in $(seq $$epochs_start_index $$current_epoch); do
+        if [[ $$epoch -lt $$starting_epoch_contract_v2 ]]; then
+          echo "Skipping epoch $$epoch, because it's before the contract v2 deployment epoch $$starting_epoch_contract_v2"
+          continue
+        fi
+        for prefix in $$prefixes; do
+          for merkle_tree_file in $(gcloud storage ls "$gs_bucket/$$epoch/$${prefix}*merkle-trees.json" 2>/dev/null); do
+            base_name=$(basename "$$merkle_tree_file")
+            gcloud storage cp "$$merkle_tree_file" "./merkle-trees/$${epoch}_$${base_name}"
+          done
+        done
+      done
+    artifact_paths:
+      - "./merkle-trees/*"
+
+  - wait: ~
+
+  - label: ":campfire::arrow_right: Fund settlements"
+    env:
+      # NOT using top level 'env:' to avoid overwriting env vars when included by other pipelines
+      command_name: 'fund-settlement'
+      RPC_URL: "$$RPC_URL"
+      RUST_LOG: info,solana_transaction_builder_executor=debug,solana_transaction_builder=debug,solana_transaction_executor=debug,fund_settlement=debug
+    commands:
+    - . "$HOME/.cargo/env"
+    - |
+      buildkite-agent artifact download --include-retried-jobs "merkle-trees/*" .
+      files=""
+      for file in ./merkle-trees/*; do
+        if [ -f "$$file" ]; then
+          files="$$files -f $$file"
+        fi
+      done
+    - config_pubkey=$(buildkite-agent meta-data get config_pubkey)
+    - buildkite-agent artifact download --include-retried-jobs target/release/fund-settlement .
+    - chmod +x target/release/fund-settlement
+    - source ./scripts/execute-handlers.sh
+    - |
+      handle_command_execution "$$command_name" \
+      ./target/release/fund-settlement \
+        --operator-authority "$$VALIDATOR_BONDS_OPERATOR_AUTHORITY" \
+        --fee-payer "$$PSR_TX_FEE_WALLET" \
+        --marinade-wallet "$$PSR_MARINADE_DAO_FUNDER_WALLET" \
+        --rent-payer "$$PSR_RENT_PAYER_WALLET" \
+        --config "$$config_pubkey" \
+        $$files
+    key: "fund-settlement"
+    artifact_paths:
+      - "./report.*.json"
+    retry:
+      automatic:
+        - exit_status: 100
+          limit: 5
+
+  - label: ":memo: Notification setup: Fund Settlements"
+    key: "notification-setup-funding"
+    env:
+      command_name: 'fund-settlement'
+    commands:
+    - |
+      buildkite-agent artifact download --include-retried-jobs "report.$$command_name.*.json" . || \
+        echo '{"command":"'$$command_name'","status":{"success":false,"error_count":1},"summary":"No report found"}' > "./report.$$command_name.0.json"
+    - latest_report=$$(ls -v "report.$$command_name."[0-9]*.json 2>/dev/null | tail -n 1)
+    - cp "$$latest_report" "./cumulative-report.$${command_name}.json"
+    - attempts_count=$$(ls -1 "report.$$command_name."[0-9]*.json 2>/dev/null | wc -l)
+    - buildkite-agent meta-data set --redacted-vars="" attempts_count "$$attempts_count"
+    artifact_paths:
+      - "./cumulative-report.*.json"
+    depends_on: "fund-settlement"
+    allow_dependency_failure: true
+
+  - label: ":printer: Annotate Report"
+    key: "annotate-report-fund"
+    env:
+      command_name: 'fund-settlement'
+    commands:
+      - source ./scripts/execute-handlers.sh
+      - annotate_execution_report "$$command_name"
+    depends_on: "fund-settlement"
+    allow_dependency_failure: true
+
+  - wait: ~
+
+  - label: ":floppy_disk: :arrow_right: :cloud: Upload artifacts Fund Settlements"
+    env:
+      command_name: 'fund-settlement'
+    commands:
+    - latest_funded_epoch=$(buildkite-agent meta-data get latest_funded_epoch) || true
+    - claim_type=$(buildkite-agent meta-data get claim_type) || true
+    - claim_type_prefix=$([[ -z "$$claim_type" ]] && echo "" || echo "$${claim_type}-")
+    - buildkite-agent artifact download cumulative-report.$${command_name}.json . || echo '"UNKNOWN ERROR"' > ./cumulative-report.$${command_name}.json
+    - |
+      if [[ -n "$$latest_funded_epoch" && $(gcloud storage ls "$gs_bucket/$$latest_funded_epoch" 2> /dev/null) ]]; then
+        gcloud storage cp ./cumulative-report.$${command_name}.json "$gs_bucket/$$latest_funded_epoch/buildkite/$${claim_type_prefix}$${command_name}-report.$(date +%s).json"
+      fi
+    depends_on: "notification-setup-funding"
+    allow_dependency_failure: true
+
+  - label: ":mega: Notification Funding"
+    env:
+      command_name: 'fund-settlement'
+    commands:
+    - source ./scripts/execute-handlers.sh
+    - check_command_execution_status "$$command_name" || true
+    - claim_type=$(buildkite-agent meta-data get claim_type)
+    - config_pubkey=$(buildkite-agent meta-data get config_pubkey)
+    - attempts_count=$(buildkite-agent meta-data get attempts_count || echo "UNKNOWN")
+    - |
+      curl $SLACK_API -X POST -H 'Content-Type: application/json; charset=utf-8' \
+        -H "Authorization: Bearer $$SLACK_BEARER_TOKEN" -d '{
+        "channel": "'$(buildkite-agent meta-data get slack_feed)'",
+        "attachments": [{
+          "color": "'"$$notification_color"'",
+          "title": "Fund '"$$claim_type"' Settlements '"$${notification_result}"', '"$$attempts_count"' attempts",
+          "title_link": "'"$${BUILDKITE_BUILD_URL}/#$${BUILDKITE_JOB_ID}"'",
+          "text": "Claim type: '"$$claim_type"'/'"$$config_pubkey"'",
+          "footer": "<'"$${BUILDKITE_BUILD_URL}/#$${BUILDKITE_JOB_ID}"'|View in Buildkite>"
+        }]
+      }'
+    depends_on: "notification-setup-funding"
+    allow_dependency_failure: true
+    if: "build.env('NOTIFY_FEED') == 'true'"
+
+  - wait: ~
+
+  - label: ":unlock: Concurrency gate fund-settlements unlock"
+    command: echo "End of concurrency gate <--"
+    concurrency_group: 'validator-bonds/fund-settlements-${CLAIM_TYPE}'
+    concurrency: 1

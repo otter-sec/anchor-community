@@ -1,0 +1,371 @@
+use bid_distribution::apy_api::fetch_ssr_pmpe;
+use bid_distribution::generators::bidding::{
+    calculate_bid_settlement_totals, generate_bid_settlements, BisectMode,
+};
+use bid_distribution::generators::psr_events::{
+    calculate_total_psr_staker_claims, generate_psr_settlements,
+};
+use bid_distribution::generators::sam_penalties::{
+    calculate_total_penalties, generate_penalty_settlements,
+};
+use bid_distribution::rewards::load_rewards_from_directory;
+use bid_distribution::sam_meta::ValidatorSamMeta;
+use bid_distribution::settlement_config::BidDistributionConfig;
+use env_logger::{Builder, Env};
+use rust_decimal::Decimal;
+use settlement_common::protected_events::generate_protected_event_collection;
+use settlement_common::revenue_expectation_meta::RevenueExpectationMetaCollection;
+use settlement_common::settlement_collection::SettlementCollection;
+use settlement_common::stake_meta_index::StakeMetaIndex;
+use settlement_common::utils::{
+    file_error, read_from_json_file, read_from_yaml_file, write_to_json_file,
+};
+use snapshot_parser_validator_cli::stake_meta::StakeMetaCollection;
+use snapshot_parser_validator_cli::validator_meta::ValidatorMetaCollection;
+use solana_sdk::native_token::LAMPORTS_PER_SOL;
+use std::collections::HashSet;
+use std::path::PathBuf;
+use {clap::Parser, log::info};
+
+#[derive(Parser, Debug)]
+#[command(
+    author,
+    version,
+    about = "Unified bid distribution CLI for generating SAM and PSR settlements"
+)]
+struct Args {
+    // ===== Required inputs =====
+    /// Input collection data referring to stake accounts from the snapshot
+    #[arg(long, env)]
+    stake_meta_collection: String,
+
+    /// Settlement configuration file (YAML)
+    #[arg(long, env)]
+    settlement_config: String,
+
+    // ===== SAM-specific inputs (optional) =====
+    /// SAM scoring meta collection JSON file
+    #[arg(long, env)]
+    sam_meta_collection: Option<String>,
+
+    /// Directory containing reward JSON files
+    #[arg(long, env)]
+    rewards_dir: Option<PathBuf>,
+
+    // ===== PSR-specific inputs (optional) =====
+    /// Validator meta collection JSON file (for PSR)
+    #[arg(long, env)]
+    validator_meta_collection: Option<String>,
+
+    /// Revenue expectation collection JSON file (for PSR)
+    #[arg(long, env)]
+    revenue_expectation_collection: Option<String>,
+
+    // ===== Outputs =====
+    /// Output path for combined settlement collection JSON
+    #[arg(long, env)]
+    output_settlement_collection: String,
+
+    /// Output path for protected events collection JSON (PSR only)
+    #[arg(long, env)]
+    output_protected_event_collection: Option<String>,
+
+    /// Base URL of the apy-api service (used to fetch SSI/SSR pmpe for the scoring epoch)
+    #[arg(long, env, default_value = "https://apy.marinade.finance")]
+    apy_api_url: String,
+}
+
+fn main() -> anyhow::Result<()> {
+    Builder::from_env(Env::default().default_filter_or("info")).init();
+
+    info!("Starting unified bid distribution...");
+    let args: Args = Args::parse();
+
+    // Load settlement configuration
+    info!(
+        "Loading settlement configuration: {:?}",
+        args.settlement_config
+    );
+    let bid_distribution_config: BidDistributionConfig =
+        read_from_yaml_file(&args.settlement_config)
+            .map_err(file_error("settlement-config", &args.settlement_config))?;
+    bid_distribution_config.fee_config.validate()?;
+
+    info!(
+        "Whitelist stake authorities: {:?}",
+        bid_distribution_config.whitelist_stake_authorities
+    );
+
+    // Load stake meta collection (always required)
+    info!("Loading stake meta collection...");
+    let stake_meta_collection: StakeMetaCollection =
+        read_from_json_file(&args.stake_meta_collection).map_err(file_error(
+            "stake-meta-collection",
+            &args.stake_meta_collection,
+        ))?;
+
+    info!("Building stake meta collection index...");
+    let stake_meta_index = StakeMetaIndex::new(&stake_meta_collection);
+    let stake_meta_epoch = stake_meta_collection.epoch;
+
+    let stake_authority_filter = bid_distribution_config.whitelist_stake_authorities_filter();
+    let exiting_stake_authority_filter = bid_distribution_config.exiting_stake_authorities_filter();
+
+    let mut all_settlements = vec![];
+    let mut adj_max_fee_bps: Option<u64> = None;
+    let mut adj_min_fee_bps: Option<u64> = None;
+    let mut collection_ssr_pmpe: Option<f64> = None;
+
+    // ===== PSR Settlements (Protected Events) =====
+    let psr_configs = bid_distribution_config.psr_settlements();
+    let mut total_staker_psr_settlements = Decimal::ZERO;
+
+    if !psr_configs.is_empty() {
+        info!("Generating PSR settlements...");
+
+        let validator_meta_path = args.validator_meta_collection.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "--validator-meta-collection is required when PSR settlement configs are present"
+            )
+        })?;
+        let revenue_path = args.revenue_expectation_collection.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("--revenue-expectation-collection is required when PSR settlement configs are present")
+        })?;
+
+        info!("Loading validator meta collection...");
+        let validator_meta_collection: ValidatorMetaCollection =
+            read_from_json_file(validator_meta_path)
+                .map_err(file_error("validator-meta-collection", validator_meta_path))?;
+
+        info!("Loading revenue expectation meta collection...");
+        let revenue_expectation_meta_collection: RevenueExpectationMetaCollection =
+            read_from_json_file(revenue_path)
+                .map_err(file_error("revenue-expectation-collection", revenue_path))?;
+
+        info!("Generating protected event collection...");
+        let protected_event_collection = generate_protected_event_collection(
+            validator_meta_collection,
+            revenue_expectation_meta_collection,
+        );
+
+        // Output protected events if requested
+        if let Some(output_path) = &args.output_protected_event_collection {
+            info!("Writing protected events collection to {output_path}");
+            write_to_json_file(&protected_event_collection, output_path)
+                .map_err(file_error("output-protected-event-collection", output_path))?;
+        }
+
+        info!("Generating PSR settlements...");
+        let psr_settlements = generate_psr_settlements(
+            &stake_meta_index,
+            &protected_event_collection,
+            &stake_authority_filter,
+            &psr_configs,
+        )?;
+        info!("Generated {} PSR settlements", psr_settlements.len());
+        total_staker_psr_settlements = calculate_total_psr_staker_claims(&psr_settlements);
+        all_settlements.extend(psr_settlements);
+    } else {
+        // No PSR configs — fail if PSR inputs were partially provided (likely a mistake)
+        anyhow::ensure!(
+            args.validator_meta_collection.is_none()
+                && args.revenue_expectation_collection.is_none(),
+            "PSR inputs (--validator-meta-collection, --revenue-expectation-collection) provided but no PSR settlement configs found in config file"
+        );
+    }
+
+    // ===== SAM Settlements (Bidding + Penalties) =====
+    let has_sam_configs = bid_distribution_config.bidding_config().is_some()
+        || bid_distribution_config
+            .bid_too_low_penalty_config()
+            .is_some()
+        || bid_distribution_config.blacklist_penalty_config().is_some()
+        || bid_distribution_config.bond_risk_fee_config().is_some();
+
+    if has_sam_configs {
+        info!("Generating SAM settlements...");
+
+        let sam_meta_path = args.sam_meta_collection.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "--sam-meta-collection is required when SAM settlement configs are present"
+            )
+        })?;
+        let rewards_dir = args.rewards_dir.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("--rewards-dir is required when SAM settlement configs are present")
+        })?;
+        let bidding_config = bid_distribution_config.bidding_config().ok_or_else(|| {
+            anyhow::anyhow!("Bidding settlement config is required in bid-distribution-config")
+        })?;
+        let bid_too_low_penalty_config = bid_distribution_config
+            .bid_too_low_penalty_config()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "BidTooLowPenalty settlement config is required in bid-distribution-config"
+                )
+            })?;
+        let blacklist_penalty_config = bid_distribution_config
+            .blacklist_penalty_config()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "BlacklistPenalty settlement config is required in bid-distribution-config"
+                )
+            })?;
+        let bond_risk_fee_config =
+            bid_distribution_config
+                .bond_risk_fee_config()
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "BondRiskFee settlement config is required in bid-distribution-config"
+                    )
+                })?;
+
+        info!("Loading SAM scoring meta collection...");
+        let sam_validator_metas: Vec<ValidatorSamMeta> = read_from_json_file(sam_meta_path)
+            .map_err(file_error("sam-meta-collection", sam_meta_path))?;
+
+        info!("Loading rewards from directory: {rewards_dir:?}");
+        let rewards_collection = load_rewards_from_directory(rewards_dir, &stake_meta_collection)?;
+        info!(
+            "Loaded rewards for {} vote accounts, total rewards: {}",
+            rewards_collection.rewards_by_vote_account.len(),
+            rewards_collection.total_rewards()
+        );
+
+        let bisect_mode = if bid_distribution_config.fee_config.min_sol_revenue.is_some() {
+            BisectMode::TargetSolRevenue
+        } else {
+            BisectMode::TargetStakerPmpe
+        };
+
+        // Epoch consistency verification
+        let rewards_epoch = rewards_collection.epoch;
+        anyhow::ensure!(
+            rewards_epoch == stake_meta_epoch,
+            "Epoch mismatch between rewards collection ({rewards_epoch}) and stake meta collection ({stake_meta_epoch})",
+        );
+        let metas_epochs: HashSet<u64> = sam_validator_metas
+            .iter()
+            .map(|meta| meta.epoch as u64)
+            .collect();
+        anyhow::ensure!(
+            metas_epochs.iter().all(|v| *v == stake_meta_epoch),
+            "Epoch mismatch between SAM metas ({metas_epochs:?}) and stake meta collection ({stake_meta_epoch})",
+        );
+
+        // Generate penalty settlements first — total_staker_penalties is needed for target_pmpe derivation.
+        info!("Generating penalty settlements...");
+        let penalty_settlements = generate_penalty_settlements(
+            &stake_meta_index,
+            &sam_validator_metas,
+            bid_too_low_penalty_config,
+            blacklist_penalty_config,
+            bond_risk_fee_config,
+            &bid_distribution_config.fee_config,
+            &*stake_authority_filter,
+        )?;
+        info!(
+            "Generated {} penalty settlements",
+            penalty_settlements.len()
+        );
+        let total_staker_penalties = calculate_total_penalties(&penalty_settlements);
+        all_settlements.extend(penalty_settlements);
+
+        let total_staker_extras = total_staker_penalties + total_staker_psr_settlements;
+        let target_pmpe = if let Some(rev) = bid_distribution_config.fee_config.min_sol_revenue {
+            let target_sol_lamports = rev * Decimal::from(LAMPORTS_PER_SOL);
+            // Probe at target_pmpe=0 (always feasible) to read fee-independent totals.
+            // Rewards and stake are unaffected by fee level — this gives us settlement_sol
+            // and total_stake needed to derive the equivalent target_pmpe for the real bisection.
+            let probe = generate_bid_settlements(
+                &stake_meta_index,
+                &sam_validator_metas,
+                &rewards_collection,
+                bidding_config,
+                &bid_distribution_config.fee_config,
+                &*stake_authority_filter,
+                &*exiting_stake_authority_filter,
+                Some(Decimal::ZERO),
+                total_staker_extras,
+                BisectMode::TargetStakerPmpe,
+            )?;
+            let probe_totals = calculate_bid_settlement_totals(&probe.settlements);
+            let (settlement_sol, total_stake) = (probe_totals.rewards, probe_totals.stake);
+            let pmpe = if total_stake.is_zero() {
+                Decimal::ZERO
+            } else {
+                ((settlement_sol + total_staker_extras - target_sol_lamports) / total_stake)
+                    .clamp(Decimal::ZERO, Decimal::ONE)
+                    * Decimal::ONE_THOUSAND
+            };
+            info!("{bisect_mode:?}: settlement_sol={settlement_sol} target_sol={target_sol_lamports} target_pmpe={pmpe}");
+            Some(pmpe)
+        } else {
+            let ssr = fetch_ssr_pmpe(&args.apy_api_url, stake_meta_epoch)?;
+            info!("SSI/SSR: {ssr} pmpe (epoch {stake_meta_epoch})");
+            collection_ssr_pmpe = Some(f64::try_from(ssr).unwrap_or(0.0));
+            bid_distribution_config
+                .fee_config
+                .min_yield_premium_over_ssr_pmpe
+                .map(|x| ssr + x)
+        };
+        info!("target_pmpe: {target_pmpe:?}");
+
+        // Generate bid settlements
+        info!("Generating bid settlements...");
+        let bid = generate_bid_settlements(
+            &stake_meta_index,
+            &sam_validator_metas,
+            &rewards_collection,
+            bidding_config,
+            &bid_distribution_config.fee_config,
+            &*stake_authority_filter,
+            &*exiting_stake_authority_filter,
+            target_pmpe,
+            total_staker_extras,
+            bisect_mode,
+        )?;
+        info!("Generated {} bid settlements", bid.settlements.len());
+        adj_max_fee_bps = Some(bid.adj_max_fee_bps);
+        adj_min_fee_bps = Some(bid.adj_min_fee_bps);
+        all_settlements.extend(bid.settlements);
+    } else {
+        // No SAM configs — fail if SAM inputs were partially provided (likely a mistake)
+        anyhow::ensure!(
+            args.sam_meta_collection.is_none() && args.rewards_dir.is_none(),
+            "SAM inputs (--sam-meta-collection, --rewards-dir) provided but no SAM settlement configs found in config file"
+        );
+    }
+
+    // Sort settlements deterministically by reason and vote account
+    all_settlements.sort_by_key(|s| (s.reason.to_string(), s.vote_account));
+
+    // Create settlement collection
+    let settlement_collection = SettlementCollection {
+        slot: stake_meta_collection.slot,
+        epoch: stake_meta_collection.epoch,
+        settlements: all_settlements,
+        adj_max_fee_bps,
+        adj_min_fee_bps,
+        ssr_pmpe: collection_ssr_pmpe,
+    };
+
+    info!(
+        "Total settlements generated: {}",
+        settlement_collection.settlements.len()
+    );
+
+    // Write outputs
+    info!(
+        "Writing settlement collection to {}",
+        &args.output_settlement_collection
+    );
+    write_to_json_file(&settlement_collection, &args.output_settlement_collection).map_err(
+        file_error(
+            "output-settlement-collection",
+            &args.output_settlement_collection,
+        ),
+    )?;
+
+    info!("Finished.");
+    Ok(())
+}

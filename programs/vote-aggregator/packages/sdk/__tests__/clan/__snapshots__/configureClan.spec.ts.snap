@@ -1,0 +1,210 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Configure clan instructions Sets the AcceptTemporaryMembers 1`] = `
+{
+  "data": [
+    150,
+    81,
+    251,
+    55,
+    108,
+    195,
+    218,
+    80,
+    0,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "4vK9oDnDgPbFGtCwdJvm3hHay9EueHDxJfNoSZMnQEZw",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "4NGov9AUKpbbkQU9AaS5ZqhEEzgWG3MSZrziDsLuWQBa",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`Configure clan instructions Sets the MinVotingWeightToJoin 1`] = `
+{
+  "data": [
+    243,
+    37,
+    204,
+    141,
+    239,
+    81,
+    74,
+    33,
+    100,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "4vK9oDnDgPbFGtCwdJvm3hHay9EueHDxJfNoSZMnQEZw",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "4NGov9AUKpbbkQU9AaS5ZqhEEzgWG3MSZrziDsLuWQBa",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`Configure clan instructions Sets the delegate 1`] = `
+{
+  "data": [
+    32,
+    30,
+    240,
+    248,
+    53,
+    252,
+    190,
+    131,
+    222,
+    167,
+    72,
+    156,
+    88,
+    4,
+    111,
+    141,
+    102,
+    200,
+    96,
+    99,
+    80,
+    141,
+    117,
+    187,
+    230,
+    225,
+    250,
+    206,
+    120,
+    134,
+    27,
+    244,
+    216,
+    206,
+    72,
+    120,
+    106,
+    126,
+    34,
+    151,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "4vK9oDnDgPbFGtCwdJvm3hHay9EueHDxJfNoSZMnQEZw",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "4NGov9AUKpbbkQU9AaS5ZqhEEzgWG3MSZrziDsLuWQBa",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`Configure clan instructions Sets the description 1`] = `
+{
+  "data": [
+    87,
+    204,
+    33,
+    181,
+    26,
+    229,
+    252,
+    151,
+    16,
+    0,
+    0,
+    0,
+    78,
+    111,
+    32,
+    109,
+    111,
+    114,
+    101,
+    32,
+    109,
+    97,
+    114,
+    105,
+    110,
+    97,
+    100,
+    101,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "4vK9oDnDgPbFGtCwdJvm3hHay9EueHDxJfNoSZMnQEZw",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "4NGov9AUKpbbkQU9AaS5ZqhEEzgWG3MSZrziDsLuWQBa",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`Configure clan instructions Sets the name 1`] = `
+{
+  "data": [
+    197,
+    215,
+    183,
+    186,
+    71,
+    46,
+    171,
+    101,
+    4,
+    0,
+    0,
+    0,
+    76,
+    73,
+    68,
+    79,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "4vK9oDnDgPbFGtCwdJvm3hHay9EueHDxJfNoSZMnQEZw",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "4NGov9AUKpbbkQU9AaS5ZqhEEzgWG3MSZrziDsLuWQBa",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;

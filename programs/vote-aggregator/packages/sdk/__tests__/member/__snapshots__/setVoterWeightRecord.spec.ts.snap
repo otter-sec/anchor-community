@@ -1,0 +1,140 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`set_voter_weight_record instruction Works 1`] = `
+{
+  "data": [
+    171,
+    189,
+    178,
+    173,
+    4,
+    58,
+    86,
+    249,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "FjdiRd8eVGtNkZMUeZyhJHRDZknHePoiJoWbZED949EY",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "HuaFGT8nfMxDjHSjHgNDT4hLZftsdZe8QHvg5aepjBwY",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "Djribmj2nyN27ydbAfLYZL6TSEaLmJ5BtaA3GBDV5ttq",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "4uYaSNSqksSWcZZaKp89fQqFk7m1oq1XzyJw349TEwSV",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "2Cw2oHCP3VHSZcGdxJ4VECCxg79LXULQdMEv2qwG2JBf",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "GYV657WS94UU9TRy3Pfy541vDozNzBa9aQL2YKpLpyJv",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "wBKR4HVxmv1Yca55u9u3Zbfwjzcao2JNcPeanPdgS4m",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`set_voter_weight_record instruction Works 2`] = `
+{
+  "data": [
+    171,
+    189,
+    178,
+    173,
+    4,
+    58,
+    86,
+    249,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "GW36cWNe44i64ddCcwrpxjWgjDAwku6mKzksM5D3pbsL",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "6EGK73rCovYf2mKMrNyzNMTXuq1bMDZAM23LVLW1bB3J",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "FPTcxdXuQRNrL54T43CayecX424PamXdVB3estSuqpvG",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "H9tgTZTBQLriaD4383dbjuM8BH2Vx2dgKht1ik9XD1DF",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "3QcfnwL9uVT4nBDSvUwwEQrq4qqn8G7sCCN1CApiRYqZ",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`set_voter_weight_record instruction Works 3`] = `
+{
+  "data": [
+    171,
+    189,
+    178,
+    173,
+    4,
+    58,
+    86,
+    249,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "GtpQqVHezPNUqmPj4PgtswXRhgPJwWW6AAfW8oVJX8eF",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "6KiEjpSdqENWWYxrpFaRm4wX4n2gBpSS1WEdYoX1DPH8",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "Djribmj2nyN27ydbAfLYZL6TSEaLmJ5BtaA3GBDV5ttq",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "Hzot6JotcPuPusCYwaJUAEeTMurt6Z9C1Fq2pMvjsQXD",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "9yUPQs6PGU2snZKpnVRQXDNx3PL34A27YiWp6nSdE75c",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;

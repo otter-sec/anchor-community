@@ -1,0 +1,125 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`update_voter_weight instruction Works 1`] = `
+{
+  "data": [
+    92,
+    35,
+    133,
+    94,
+    230,
+    70,
+    14,
+    157,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "ExqcwDuRTgGPaEmG2mnfG9G3my8keGeEV1sJ1XHq5T7K",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "ARCxoQhmN1Tm7Ys8idoEtUaZxPnzomwUSWSK9zzNrBTu",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "BGb4mNdyzg2T2k3KNikN52R97bzG1tPmYBRtwCdLdJtA",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "EpWeSEsif2MnUXpQDeg5noGF88Fyr5N8t4AEEjzAroBD",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "65i8C7Ku6npVGfZ97JRPN7GSv3kSbwQAbFFzTpEaMrZk",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "2g5M2FWv7aEEfzMUxojoEacSvSyZsNz8EECxeU1Uvztp",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`update_voter_weight instruction Works 2`] = `
+{
+  "data": [
+    92,
+    35,
+    133,
+    94,
+    230,
+    70,
+    14,
+    157,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "ALrE6RHrVgEgL3dGx8qX8QeDnJnxw9GUKLGRLrxjs17d",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "6SAXMdubziD3svnJYQmXch6tCzSPRw6p45fpYGUb2LuB",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "XJsEkW6fCtqaoRKdfDxFXqt2Y1VhE4HoHKJnx1QzYM7",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "BjMnNWFodSFfU7Kdf5v5p2C1RPs1gBf3VmxEeNwdnA3W",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`update_voter_weight instruction Works 3`] = `
+{
+  "data": [
+    92,
+    35,
+    133,
+    94,
+    230,
+    70,
+    14,
+    157,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "D8jto6WYBj9GfDjkcKmomEJs36xnLp373SR4taDgHaA4",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "FwnknQ12tPLDF6jVT18zBNtDUywfsR3uMxwKn6x2SXoP",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "CAEYPc3GHKcnsekDnL51ShND6spWGCKcsFZavpqWCcdJ",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "4dHzxVgnQUaB1RrEDAwkZuCf9aqncecCqBQtXPtBNZCq",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;

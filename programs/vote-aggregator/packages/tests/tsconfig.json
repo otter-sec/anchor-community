@@ -1,0 +1,23 @@
+{
+  "extends": "../../node_modules/gts/tsconfig-google.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  },
+  "ts-node": {
+    "compilerOptions": {
+      "moduleResolution": "Node"
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "dev/**/*.ts",
+    "__tests__/**/*.ts",
+    "jest.config.ts",
+    "vite.config.ts"
+  ]
+}

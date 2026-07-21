@@ -1,0 +1,260 @@
+pub mod account_structs;
+/// # hastra sol vault stake - Token Staking System
+///
+/// ## Business Process Flow
+///
+/// 1. Initial Setup:
+///    - Admin creates two token types: Vault (wYLDS), Stake (PRIME)
+///    - Admin initializes program with token addresses
+///    - Admin configures vault token account to hold deposited tokens
+///
+/// 2. User Staking Flow:
+///    a. Deposit Phase:
+///       - User deposits vault tokens (wYLDS)
+///       - System securely stores tokens in vault account
+///       - User receives stake tokens (PRIME) based on their wYLDS pool share
+///
+/// 3. Withdrawal Flow:
+///    - User calls redeem(amount) with the amount of PRIME to burn
+///    - Program computes wYLDS owed using virtual shares formula
+///    - PRIME is burned; wYLDS is transferred to user immediately
+///    - Any legacy unbonding ticket from v1 is automatically closed (rent returned)
+///      when the optional ticket account is provided
+///
+/// 4. Administrative Functions:
+///    - Pause/unpause protocol operations
+///    - Update freeze and rewards administrators
+///    - Monitor vault token accounts
+///
+/// Security is maintained through PDAs (Program Derived Addresses) and strict
+/// token authority controls. All token operations are atomic and validated
+/// through Solana's transaction model.
+pub mod error;
+pub mod events;
+mod guard;
+pub mod processor;
+pub mod state;
+
+use account_structs::*;
+use anchor_lang::prelude::*;
+
+#[cfg(not(feature = "no-entrypoint"))]
+use solana_security_txt::security_txt;
+
+// Embeds stable security-reporting metadata in each deployed pool binary.
+#[cfg(not(feature = "no-entrypoint"))]
+security_txt! {
+    name: "Hastra Vault Stake",
+    project_url: "https://hastra.io",
+    contacts: "email:security@provenance.io",
+    policy: "https://vdp.figure.com/",
+    preferred_languages: "en",
+    source_code: "https://github.com/provenance-io/hastra-sol-vault"
+}
+
+// Each pool is a separate on-chain deployment of this same crate.
+// Specify exactly one pool-* feature at build time to embed the correct program ID.
+// Enabling multiple features produces a duplicate-ID compile error; enabling none
+// produces the compile_error! below.
+#[cfg(feature = "pool-prime")]
+declare_id!("97V7JsExNC6yFWu5KjK1FLfVkNVvtMpAFL5QkLWKEGxY");
+
+#[cfg(feature = "pool-auto")]
+declare_id!("5uJgCDrQHfA58fPqLsuU14Srg9quxXNHz91cZ54cq4pK");
+
+#[cfg(feature = "pool-auto-devnet")]
+declare_id!("B8FDo5EGA2hZ7YMugcw8wPHUYDBQJfNkEYpduXFLHfdZ");
+
+#[cfg(feature = "pool-smb")]
+declare_id!("FtpEAgur3VALsDw91PfNre82eXVrtgiDNf9EG3JeBd2r");
+
+#[cfg(not(any(
+    feature = "pool-prime",
+    feature = "pool-auto",
+    feature = "pool-auto-devnet",
+    feature = "pool-smb",
+)))]
+compile_error!(
+    "no pool selected: enable exactly one of pool-prime, pool-auto, pool-auto-devnet, or pool-smb"
+);
+
+#[program]
+pub mod vault_stake {
+    use super::*;
+
+    /// Initializes the vault program with the required token configurations:
+    /// - vault_mint: The token that users deposit (e.g., wYLDS)
+    /// - stake_mint: The token users receive when staking (e.g., PRIME)
+    pub fn initialize(
+        ctx: Context<Initialize>,
+        freeze_administrators: Vec<Pubkey>,
+        rewards_administrators: Vec<Pubkey>,
+    ) -> Result<()> {
+        processor::initialize(ctx, freeze_administrators, rewards_administrators)
+    }
+
+    /// Pauses or unpauses the protocol operations:
+    /// - pause: true to pause, false to unpause
+    pub fn pause(ctx: Context<Pause>, pause: bool) -> Result<()> {
+        processor::pause(ctx, pause)
+    }
+
+    /// Handles user deposits of vault tokens (e.g., wYLDS):
+    /// - Transfers vault tokens to program vault account
+    /// - Mints equivalent amount of stake tokens (e.g., PRIME) to user
+    pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+        processor::deposit(ctx, amount)
+    }
+
+    /// Redeems stake tokens (PRIME) for vault tokens (wYLDS):
+    /// - Burns the specified amount of PRIME from the user's account
+    /// - Transfers the proportional wYLDS from the vault to the user immediately
+    /// - Optionally closes a legacy unbonding ticket (from v1) and returns rent to user
+    pub fn redeem(ctx: Context<Redeem>, amount: u64) -> Result<()> {
+        processor::redeem(ctx, amount)
+    }
+
+    pub fn update_freeze_administrators(
+        ctx: Context<UpdateFreezeAdministrators>,
+        new_administrators: Vec<Pubkey>,
+    ) -> Result<()> {
+        processor::update_freeze_administrators(ctx, new_administrators)
+    }
+
+    pub fn freeze_token_account(ctx: Context<FreezeTokenAccount>) -> Result<()> {
+        processor::freeze_token_account(ctx)
+    }
+    pub fn thaw_token_account(ctx: Context<ThawTokenAccount>) -> Result<()> {
+        processor::thaw_token_account(ctx)
+    }
+
+    pub fn update_rewards_administrators(
+        ctx: Context<UpdateRewardsAdministrators>,
+        new_administrators: Vec<Pubkey>,
+    ) -> Result<()> {
+        processor::update_rewards_administrators(ctx, new_administrators)
+    }
+
+    pub fn publish_rewards(ctx: Context<PublishRewards>, id: u32, amount: u64) -> Result<()> {
+        processor::publish_rewards(ctx, id, amount)
+    }
+
+    pub fn shares_to_assets(ctx: Context<ConversionView>, shares: u64) -> Result<u64> {
+        processor::shares_to_assets(ctx, shares)
+    }
+
+    pub fn assets_to_shares(ctx: Context<ConversionView>, assets: u64) -> Result<u64> {
+        processor::assets_to_shares(ctx, assets)
+    }
+
+    pub fn exchange_rate(ctx: Context<ConversionView>) -> Result<u64> {
+        processor::exchange_rate(ctx)
+    }
+
+    // ========== PRICE CONFIG INSTRUCTIONS ==========
+
+    /// Creates the StakePriceConfig PDA with Chainlink program references and staleness parameters.
+    /// Must be called once after deployment before deposit or redeem can proceed.
+    /// Only callable by the program upgrade authority.
+    pub fn initialize_price_config(
+        ctx: Context<InitializePriceConfig>,
+        chainlink_program: Pubkey,
+        chainlink_verifier_account: Pubkey,
+        chainlink_access_controller: Pubkey,
+        feed_id: [u8; 32],
+        price_scale: u64,
+        price_max_staleness: i64,
+    ) -> Result<()> {
+        processor::initialize_price_config(
+            ctx,
+            chainlink_program,
+            chainlink_verifier_account,
+            chainlink_access_controller,
+            feed_id,
+            price_scale,
+            price_max_staleness,
+        )
+    }
+
+    /// Updates Chainlink program references and staleness parameters on an existing StakePriceConfig.
+    /// Does not reset the stored price or price_timestamp.
+    /// Only callable by the program upgrade authority.
+    pub fn update_price_config(
+        ctx: Context<UpdatePriceConfig>,
+        chainlink_program: Pubkey,
+        chainlink_verifier_account: Pubkey,
+        chainlink_access_controller: Pubkey,
+        feed_id: [u8; 32],
+        price_scale: u64,
+        price_max_staleness: i64,
+    ) -> Result<()> {
+        processor::update_price_config(
+            ctx,
+            chainlink_program,
+            chainlink_verifier_account,
+            chainlink_access_controller,
+            feed_id,
+            price_scale,
+            price_max_staleness,
+        )
+    }
+
+    /// Submits a signed Chainlink Data Streams report for on-chain verification.
+    /// On success, stores the verified price and the report’s `observations_timestamp` in
+    /// StakePriceConfig; deposit and redeem measure staleness from that observation time.
+    /// Only callable by rewards administrators.
+    pub fn verify_price(ctx: Context<VerifyPrice>, signed_report: Vec<u8>) -> Result<()> {
+        processor::verify_price(ctx, signed_report)
+    }
+
+    /// FOR TESTING ONLY — directly sets price and price_timestamp on StakePriceConfig.
+    /// Requires program upgrade authority. Use on localnet only; use verify_price in production.
+    #[cfg(feature = "testing")]
+    pub fn set_price_for_testing(
+        ctx: Context<SetPriceForTesting>,
+        price: i128,
+        price_timestamp: i64,
+    ) -> Result<()> {
+        processor::set_price_for_testing(ctx, price, price_timestamp)
+    }
+
+    /// Creates the StakeRewardConfig PDA with protocol default caps and cooldown.
+    /// Must be called once before `publish_rewards` can enforce limits.
+    /// Only callable by the program upgrade authority.
+    pub fn initialize_stake_reward_config(ctx: Context<InitializeStakeRewardConfig>) -> Result<()> {
+        processor::initialize_stake_reward_config(ctx)
+    }
+
+    /// Updates the maximum reward distribution cap on an existing StakeRewardConfig.
+    /// Only callable by the program upgrade authority.
+    pub fn update_max_reward_bps(ctx: Context<UpdateMaxRewardBps>, new_bps: u64) -> Result<()> {
+        processor::update_max_reward_bps(ctx, new_bps)
+    }
+
+    /// Updates the absolute per-call rewards cap.
+    /// Only callable by the program upgrade authority.
+    pub fn update_max_period_rewards(
+        ctx: Context<UpdateMaxPeriodRewards>,
+        new_cap: u64,
+    ) -> Result<()> {
+        processor::update_max_period_rewards(ctx, new_cap)
+    }
+
+    /// Updates the cooldown period in seconds between successful reward publications.
+    /// Only callable by the program upgrade authority.
+    pub fn update_reward_period_seconds(
+        ctx: Context<UpdateRewardPeriodSeconds>,
+        new_seconds: i64,
+    ) -> Result<()> {
+        processor::update_reward_period_seconds(ctx, new_seconds)
+    }
+
+    /// Updates the lifetime cumulative rewards cap.
+    /// Only callable by the program upgrade authority.
+    pub fn update_max_total_rewards(
+        ctx: Context<UpdateMaxTotalRewards>,
+        new_cap: u64,
+    ) -> Result<()> {
+        processor::update_max_total_rewards(ctx, new_cap)
+    }
+}
