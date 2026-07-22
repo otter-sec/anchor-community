@@ -467,7 +467,6 @@
     "build_command": "anchor keys sync && anchor build",
     "ignored": [
       ".audit",
-      "client",
       "target",
       "programs/gamma/tests/fixtures/kamino.so"
     ]
