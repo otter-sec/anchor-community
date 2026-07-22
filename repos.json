@@ -539,7 +539,7 @@
     "source": "https://github.com/relayprotocol/relay-settlement",
     "commit": "98ad1a0af009c247fb85205c2119f7371e684520",
     "directory": "relay-settlement",
-    "build_command": "cd packages/depository/packages/solana-vm && anchor keys sync && anchor build",
+    "build_command": "cd packages/depository/packages/solana-vm && anchor keys sync && anchor build --skip-lint",
     "ignored": [
       ".yarn",
       "crates",
