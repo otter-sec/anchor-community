@@ -1,0 +1,16 @@
+[toolchain]
+anchor_version = "0.29.0"
+
+[features]
+seeds = false
+skip-lint = false
+
+[programs.localnet]
+vote_aggregator = "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"

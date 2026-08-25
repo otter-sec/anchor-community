@@ -1,0 +1,24 @@
+name: Clippy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install libudev-dev
+        run: sudo apt-get update && sudo apt-get install libudev-dev
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2024-02-01
+          components: clippy
+      - name: Run clippy check
+        working-directory: ./staking
+        run: cargo +nightly-2024-02-01 clippy --tests -- -D warnings

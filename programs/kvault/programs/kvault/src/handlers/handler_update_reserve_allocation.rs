@@ -1,0 +1,154 @@
+use anchor_lang::{prelude::*, Accounts};
+use anchor_spl::{
+    token::Token,
+    token_interface::{Mint, TokenAccount},
+};
+use kamino_lending::Reserve;
+
+use crate::{
+    operations::reserve_whitelist_operations,
+    utils::consts::{CTOKEN_VAULT_SEED, WHITELISTED_RESERVES_SEED},
+    xmsg, CtokenCap, KaminoVaultError, ReserveWhitelistEntry, VaultState,
+};
+
+
+
+
+
+
+
+
+
+pub fn process_v1(
+    ctx: Context<UpdateReserveAllocation>,
+    target_allocation_weight: u64,
+    allocation_cap: u64,
+) -> Result<()> {
+    process_impl(ctx, target_allocation_weight, allocation_cap, None)
+}
+
+pub fn process_v2(
+    ctx: Context<UpdateReserveAllocation>,
+    target_allocation_weight: u64,
+    allocation_cap: u64,
+    ctoken_allocation_cap: u64,
+) -> Result<()> {
+    process_impl(
+        ctx,
+        target_allocation_weight,
+        allocation_cap,
+        Some(ctoken_allocation_cap),
+    )
+}
+
+fn process_impl(
+    ctx: Context<UpdateReserveAllocation>,
+    target_allocation_weight: u64,
+    allocation_cap: u64,
+    ctoken_allocation_cap_raw: Option<u64>,
+) -> Result<()> {
+    let vault = &mut ctx.accounts.vault_state.load_mut()?;
+    let reserve = &ctx.accounts.reserve.load()?;
+
+    let reserve_key = ctx.accounts.reserve.key();
+    let idx = vault.get_reserve_idx_in_allocation(&reserve_key);
+   
+    let is_vault_admin = ctx.accounts.signer.key() == vault.vault_admin_authority;
+    let is_allocation_admin = ctx.accounts.signer.key() == vault.allocation_admin;
+    match idx {
+        Some(_) => {
+            require!(
+                is_allocation_admin || is_vault_admin,
+                KaminoVaultError::WrongAdminOrAllocationAdmin
+            );
+        }
+        None => {
+            require!(
+                is_vault_admin,
+                KaminoVaultError::WrongAdminOrAllocationAdmin
+            );
+        }
+    }
+
+    let ctoken_allocation_cap = ctoken_allocation_cap_raw
+        .map(CtokenCap::new)
+        .unwrap_or_else(|| {
+            idx.map(|idx| vault.vault_allocation_strategy[idx].ctoken_allocation_cap())
+                .unwrap_or_default()
+        });
+
+    let ctoken_vault_bump = ctx.bumps.ctoken_vault;
+    let ctoken_allocation_cap_raw = ctoken_allocation_cap.raw();
+    xmsg!(
+        "Updating reserve {reserve_symbol:?} {reserve_key} with weight {target_allocation_weight}, cap {allocation_cap}, ctoken cap {ctoken_allocation_cap_raw}",
+        reserve_symbol=reserve.token_symbol(),
+    );
+
+    require_eq!(reserve.liquidity.mint_pubkey, vault.token_mint);
+
+    reserve_whitelist_operations::check_can_update_allocation_weight(
+        vault,
+        idx,
+        target_allocation_weight,
+        allocation_cap,
+        ctoken_allocation_cap,
+        ctx.accounts
+            .reserve_whitelist_entry
+            .as_ref()
+            .map(|acc| acc.as_ref()),
+    )?;
+
+    vault.upsert_reserve_allocation(
+        reserve_key,
+        ctx.accounts.ctoken_vault.key(),
+        u64::from(ctoken_vault_bump),
+        target_allocation_weight,
+        allocation_cap,
+        ctoken_allocation_cap,
+    )?;
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct UpdateReserveAllocation<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    #[account(mut,
+        has_one = base_vault_authority
+    )]
+    pub vault_state: AccountLoader<'info, VaultState>,
+
+    /// CHECK: has_one check in the vault_state
+    pub base_vault_authority: AccountInfo<'info>,
+
+    #[account(mut,
+        address = reserve.load()?.collateral.mint_pubkey,
+        mint::token_program = reserve_collateral_token_program,
+    )]
+    pub reserve_collateral_mint: Box<InterfaceAccount<'info, Mint>>,
+
+    /// CHECK: Need to trust the admin
+    pub reserve: AccountLoader<'info, Reserve>,
+
+    #[account(init_if_needed,
+        seeds = [CTOKEN_VAULT_SEED, vault_state.key().as_ref(), reserve.key().as_ref()],
+        bump,
+        payer = signer,
+        token::mint = reserve_collateral_mint,
+        token::authority = base_vault_authority,
+        token::token_program = reserve_collateral_token_program
+    )]
+    pub ctoken_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    #[account(
+        seeds = [WHITELISTED_RESERVES_SEED, reserve.key().as_ref()],
+        bump
+    )]
+    pub reserve_whitelist_entry: Option<Account<'info, ReserveWhitelistEntry>>,
+
+    pub reserve_collateral_token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}

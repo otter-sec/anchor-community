@@ -1,0 +1,77 @@
+agents:
+  queue: "snapshots"
+
+env:
+  gs_bucket: gs://marinade-validator-bonds-mainnet
+  gs_bucket_snapshots: gs://marinade-solana-snapshot-mainnet
+  gs_bucket_etl: gs://marinade-stakes-etl-mainnet
+  APY_API_URL: https://apy.marinade.finance
+
+steps:
+  - label: ":closed_lock_with_key: Concurrency gate lock"
+    key: concurrency-lock
+    command: echo "--> Start of concurrency gate"
+    concurrency_group: 'validator-bonds/scheduler-bidding'
+    concurrency: 1
+
+  - wait: ~
+
+  - label: ":shellcheck: Load available epochs"
+    commands:
+      - |
+        set -o pipefail
+        # Check for latest epoch with bid-distribution settlements (indicates prepare-bid-distribution ran)
+        max_processed_epoch_bid=$(gcloud storage ls "${gs_bucket}/**/bid-distribution-settlements.json" | awk -F / '{print $$4}' | sort -nr | head -n 1 || echo "0")
+        max_processed_epoch_bid="$${max_processed_epoch_bid%%[^0-9]*}"
+        max_processed_epoch_bid=$${max_processed_epoch_bid:-0}
+
+        max_available_epoch=$(gcloud storage ls "${gs_bucket_snapshots}/**/stakes.json" | awk -F / '{print $$4}' | sort -nr | head -n 1 || exit 2) || exit 2
+        max_available_etl_epoch=$(gcloud storage ls "$gs_bucket_etl" | awk -F / '{print $$4}' | sort -nr | head -n 1) || exit 22
+        ssr_json=$(curl -fsSL --max-time 15 "${APY_API_URL}/v1/epoch-pmpe/ssr") || exit 23
+        max_available_ssr_epoch=$(echo "$$ssr_json" | jq '[.epochs[].epoch] | max // 0')
+        echo "Bidding:: > max_processed_epoch_bid: $$max_processed_epoch_bid, max_available_epoch: $$max_available_epoch, max_available_etl_epoch: $$max_available_etl_epoch, max_available_ssr_epoch: $$max_available_ssr_epoch"
+      - |
+        buildkite-agent meta-data set max_processed_epoch_bid "$$max_processed_epoch_bid"
+        buildkite-agent meta-data set max_available_epoch "$$max_available_epoch"
+        buildkite-agent meta-data set max_available_etl_epoch "$$max_available_etl_epoch"
+        buildkite-agent meta-data set max_available_ssr_epoch "$$max_available_ssr_epoch"
+
+  - wait: ~
+
+  - label: ":calendar: Schedule"
+    commands:
+      - max_processed_epoch_bid=$(buildkite-agent meta-data get max_processed_epoch_bid)
+      - max_available_epoch=$(buildkite-agent meta-data get max_available_epoch)
+      - max_available_etl_epoch=$(buildkite-agent meta-data get max_available_etl_epoch)
+      - max_available_ssr_epoch=$(buildkite-agent meta-data get max_available_ssr_epoch)
+      - |
+        if (( $$max_available_etl_epoch >= $$max_available_epoch )) \
+           && (( $$max_available_ssr_epoch >= $$max_available_epoch )); then
+          epoch=$${max_available_epoch}
+          if (( $$max_processed_epoch_bid < $$max_available_epoch )); then
+            gcloud storage cp "$gs_bucket_snapshots/$$epoch/past-validators.json" "$gs_bucket/$$epoch/"
+            gcloud storage cp "$gs_bucket_snapshots/$$epoch/validators.json" "$gs_bucket/$$epoch/"
+            gcloud storage cp "$gs_bucket_snapshots/$$epoch/stakes.json" "$gs_bucket/$$epoch/"
+
+            cat <<EOF | buildkite-agent pipeline upload
+              steps:
+                - trigger: "prepare-bid-distribution"
+                  label: ":rocket: Trigger: Prepare Bid Distribution ($$epoch)"
+                  async: false
+                  build:
+                    branch: $$BUILDKITE_BRANCH
+                    env:
+                      EPOCH: $$epoch
+                      NOTIFY_FEED: $NOTIFY_FEED
+                      gs_bucket: $gs_bucket
+        EOF
+            echo "Scheduling BID DISTRIBUTION completed for epoch $$epoch"
+          fi
+        fi
+
+  - wait: ~
+
+  - label: ":unlock: Concurrency gate unlock"
+    command: echo "End of concurrency gate <--"
+    concurrency_group: 'validator-bonds/scheduler-bidding'
+    concurrency: 1

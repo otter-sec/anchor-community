@@ -1,0 +1,44 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`start_leaving_clan instruction Works 1`] = `
+{
+  "data": [
+    212,
+    61,
+    240,
+    171,
+    150,
+    39,
+    208,
+    37,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "BgFeLQgzgkbY77wjS4xuv5Hpd1jCP5FS1qhLQAX1mTWH",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "8YLCXi64yRzhGZCKShsSRewgURAc2kmj1cRnruUsb1aE",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "4G4wcigQWN98PhYePHWdwHtoBEGmhQytoRfJwgeQYY8E",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "7rbsNEohiWgLoZcw7rTmQT2Da7nRFNhSNy39xEcVf9dV",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "8P6pvbVLaj6e7R5bX8MJoeyKLCnkdSBjCp4yvYhWnXbM",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;

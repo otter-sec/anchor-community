@@ -1,0 +1,68 @@
+[package]
+publish = false
+name = "settlement-pipelines"
+version = "0.0.1"
+description = "Off-chain pipelines to Validator Bonds Program"
+edition = "2021"
+authors = ["Marinade.Finance"]
+
+[[bin]]
+name = "init-settlement"
+path = "src/bin/init_settlement.rs"
+
+[[bin]]
+name = "fund-settlement"
+path = "src/bin/fund_settlement.rs"
+
+[[bin]]
+name = "list-claimable-epoch"
+path = "src/bin/list_claimable_epoch.rs"
+
+[[bin]]
+name = "claim-settlement"
+path = "src/bin/claim_settlement.rs"
+
+[[bin]]
+name = "close-settlement"
+path = "src/bin/close_settlement.rs"
+
+[[bin]]
+name = "list-settlement"
+path = "src/bin/list_settlement.rs"
+
+[[bin]]
+name = "verify-settlement"
+path = "src/bin/verify_settlement.rs"
+
+[[bin]]
+name = "merge-stakes"
+path = "src/bin/merge_stakes.rs"
+
+[dependencies]
+anchor-client = {workspace = true}
+anyhow = { workspace = true }
+bincode = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+env_logger = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
+merkle-tree = { workspace = true }
+solana-cli-output = { workspace = true }
+solana-transaction-executor = { workspace = true }
+solana-transaction-builder = { workspace = true }
+solana-transaction-builder-executor = { workspace = true }
+solana-sdk-ids = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+settlement-common = { workspace = true }
+shellexpand = { workspace = true }
+solana-sdk = { workspace = true }
+solana-client = { workspace = true }
+tokio = { workspace = true }
+validator-bonds = { workspace = true }
+validator-bonds-common = { workspace = true }
+

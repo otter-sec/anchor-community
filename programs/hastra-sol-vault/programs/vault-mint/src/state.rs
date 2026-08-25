@@ -1,0 +1,137 @@
+use anchor_lang::prelude::*;
+
+#[account]
+pub struct Config {
+    pub vault: Pubkey,
+    pub mint: Pubkey,
+    pub freeze_administrators: Vec<Pubkey>,
+    pub rewards_administrators: Vec<Pubkey>,
+    pub vault_authority: Pubkey,
+    pub redeem_vault: Pubkey,
+    pub bump: u8,
+    pub paused: bool,
+    pub allowed_external_mint_program: Pubkey,
+}
+
+impl Config {
+    // The vectors have a max length of 5 each and must include the Borsh overhead of 4 bytes for
+    // the length prefix.
+    pub const LEN: usize = 8 + 32 + 32 + (4 + (32 * 5)) + (4 + (32 * 5)) + 32 + 32 + 1 + 1 + 32;
+}
+
+#[account]
+pub struct RewardsEpoch {
+    pub index: u64,            // epoch id
+    pub merkle_root: [u8; 32], // sha256 merkle root (sortPairs: false; position via ProofNode.is_left)
+    /// Declared epoch reward budget. Binding for epochs at or after `first_capped_epoch`.
+    pub total: u64,
+    pub created_ts: i64,
+}
+impl RewardsEpoch {
+    pub const LEN: usize = 8 + 8 + 32 + 8 + 8;
+}
+
+#[account]
+pub struct ClaimRecord {} // empty marker account, existence = already claimed
+impl ClaimRecord {
+    pub const LEN: usize = 8;
+}
+
+/// Global configuration for rewards epoch caps.
+#[account]
+pub struct EpochCapsConfig {
+    /// Ceiling on `create_rewards_epoch.total` for future epochs.
+    pub max_epoch_cap: u64,
+    /// Epochs with `index >= first_capped_epoch` enforce aggregate claim caps.
+    /// Lower indices only require a valid Merkle proof and `ClaimRecord`.
+    pub first_capped_epoch: u64,
+    pub bump: u8,
+}
+
+impl EpochCapsConfig {
+    pub const LEN: usize = 8 + 8 + 8 + 1;
+}
+
+/// Tracks cumulative wYLDS minted via `claim_rewards` for one epoch.
+#[account]
+pub struct EpochClaimedAmount {
+    pub claimed_total: u64,
+}
+
+impl EpochClaimedAmount {
+    pub const LEN: usize = 8 + 8;
+}
+
+#[account]
+pub struct RedemptionRequest {
+    pub user: Pubkey,
+    pub amount: u64,
+    pub mint: Pubkey,
+    pub bump: u8,
+}
+
+impl RedemptionRequest {
+    pub const LEN: usize = 8 + 32 + 8 + 32 + 1;
+}
+
+/// One Merkle proof element.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct ProofNode {
+    pub sibling: [u8; 32],
+    pub is_left: bool,
+}
+
+// New vault token account config used to validate that the deposited token
+// account is the correct one. This is used to prevent a user from depositing
+// to the wrong token account even when it's owned by the vault authority.
+// Adding a new vault token config eliminates the need for reallocating the
+// program's config account size. The implication is, however, that this config
+// must be set after the program has been deployed and initialized - which
+// is a reasonable tradeoff to the complexity of updating the deployed
+// config.
+#[account]
+pub struct VaultTokenAccountConfig {
+    pub vault_token_account: Pubkey,
+    pub bump: u8,
+}
+
+impl VaultTokenAccountConfig {
+    pub const LEN: usize = 8 + 32 + 1; // discriminator + pubkey + bump
+}
+
+// Stores additional external programs authorized to call external_program_mint via CPI,
+// extending the single allowed_external_mint_program field in Config without changing the
+// Config account layout. Follows the same additive PDA pattern used for
+// VaultTokenAccountConfig and StakePriceConfig — existing deployments upgrade cleanly
+// because the original Config account is never reallocated. The legacy single-program
+// field continues to authorize the first staking program; this PDA authorizes any
+// subsequent programs (e.g. vault-stake-auto).
+#[account]
+pub struct AllowedExternalMintPrograms {
+    pub programs: Vec<Pubkey>,
+    pub bump: u8,
+}
+
+impl AllowedExternalMintPrograms {
+    // Account allocations used with Anchor's `init_if_needed` must keep a stable
+    // configured size across repeated calls. Pre-allocate enough room for the full
+    // u8 domain so registration remains idempotent and doesn't trip ConstraintSpace
+    // when existing accounts were previously expanded.
+    pub const LEN: usize = 8 + 4 + (32 * (u8::MAX as usize)) + 1;
+
+    pub fn len_for_program_count(program_count: usize) -> usize {
+        8 + 4 + (32 * program_count) + 1
+    }
+}
+
+/// Stores the active registration cap for allowed external mint programs.
+/// Kept in a separate PDA to avoid reallocating the legacy Config account.
+#[account]
+pub struct ExternalMintProgramsLimitConfig {
+    pub max_programs: u8,
+    pub bump: u8,
+}
+
+impl ExternalMintProgramsLimitConfig {
+    pub const LEN: usize = 8 + 1 + 1;
+}

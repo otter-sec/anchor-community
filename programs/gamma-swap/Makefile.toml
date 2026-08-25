@@ -1,0 +1,41 @@
+[config]
+default_to_workspace = false
+skip_core_tasks = true
+
+[tasks.build_client]
+script = """
+cd client
+cargo build --release
+"""
+
+[tasks.build_program]
+script = """
+RUSTUP_TOOLCHAIN="nightly-2024-11-19" anchor build
+"""
+[tasks.build_all]
+dependencies = ["build_program", "build_client"]
+
+[tasks.install_client]
+script = """
+cd client
+cargo install --path ./
+"""
+dependencies = ["build_program", "build_client"]
+
+[tasks.deploy_program]
+script = """
+anchor deploy
+"""
+dependencies = ["build_program"]
+
+[tasks.deploy_all]
+dependencies = ["build_all", "install_client", "deploy_program"]
+
+[tasks.test]
+script="""
+cd programs/gamma
+cargo test-sbf --features test-sbf
+"""
+
+[tasks.verified_build]
+script="solana-verify build --library-name gamma"

@@ -1,0 +1,37 @@
+use anchor_client::{Client, Cluster, DynSigner, Program};
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::signature::Keypair;
+use std::{str::FromStr, sync::Arc};
+
+pub mod bond_products;
+pub mod bonds;
+pub mod cli_result;
+pub mod config;
+pub mod constants;
+pub mod dto;
+pub mod funded_bonds;
+pub mod settlement_claims;
+pub mod settlements;
+pub mod stake_accounts;
+pub mod utils;
+pub mod utils_rpc_retry;
+pub mod withdraw_requests;
+
+// Re-export commonly used types for convenience
+pub use validator_bonds::state::bond_product::ProductType;
+
+pub fn get_validator_bonds_program(
+    rpc_client: Arc<RpcClient>,
+    payer: Option<Arc<DynSigner>>,
+) -> anyhow::Result<Program<Arc<DynSigner>>> {
+    // anchor-client's Program/Client API dictates the Arc<DynSigner> handle type
+    #[allow(clippy::arc_with_non_send_sync)]
+    let payer = payer.unwrap_or(Arc::new(DynSigner(Arc::new(Keypair::new()))));
+
+    Ok(Client::new_with_options(
+        Cluster::from_str(&rpc_client.url())?,
+        payer,
+        rpc_client.commitment(),
+    )
+    .program(validator_bonds::ID)?)
+}

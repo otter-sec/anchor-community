@@ -1,0 +1,219 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Configure root Runs pause/resume instruction 1`] = `
+{
+  "data": [
+    211,
+    22,
+    221,
+    251,
+    74,
+    121,
+    193,
+    47,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "E6KhZ61GXRnYNRPvfsQUghmwsrbFYRLPhquyKUskYsCS",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "CK1VnpRfpYmGNNNnp9MDYTpKLDrwwXVbSXSMEbTzujHv",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "91kqKkYveAy8JJgvLEcKQr8QLUN8uNUhcz34QwFDz8hn",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`Configure root Runs pause/resume instruction 2`] = `
+{
+  "data": [
+    1,
+    166,
+    51,
+    170,
+    127,
+    32,
+    141,
+    206,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "AHsiwC15xSDzpDGEkyjErBvBUCb4fZUh84RjxVsVSzYz",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "9ZkuvrkpK8VRL4bVE6hTgLgGmHQ6QYtFs86mpLYHxEu3",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "CVmaerBr773B2vJThgAPRLawtQzECyATZk55iBHZE12N",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`Configure root Runs set_max_proposal_lifetime instruction 1`] = `
+{
+  "data": [
+    134,
+    215,
+    241,
+    9,
+    69,
+    23,
+    78,
+    1,
+    246,
+    39,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "E6KhZ61GXRnYNRPvfsQUghmwsrbFYRLPhquyKUskYsCS",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "CK1VnpRfpYmGNNNnp9MDYTpKLDrwwXVbSXSMEbTzujHv",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "91kqKkYveAy8JJgvLEcKQr8QLUN8uNUhcz34QwFDz8hn",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`Configure root Runs set_max_proposal_lifetime instruction 2`] = `
+{
+  "data": [
+    134,
+    215,
+    241,
+    9,
+    69,
+    23,
+    78,
+    1,
+    246,
+    39,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "AHsiwC15xSDzpDGEkyjErBvBUCb4fZUh84RjxVsVSzYz",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "9ZkuvrkpK8VRL4bVE6hTgLgGmHQ6QYtFs86mpLYHxEu3",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "CVmaerBr773B2vJThgAPRLawtQzECyATZk55iBHZE12N",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;
+
+exports[`Configure root Runs set_voting_weight instruction 1`] = `
+{
+  "data": [
+    11,
+    188,
+    151,
+    98,
+    51,
+    12,
+    0,
+    108,
+    215,
+    130,
+    64,
+    214,
+    42,
+    144,
+    65,
+    90,
+    156,
+    189,
+    238,
+    134,
+    136,
+    67,
+    69,
+    161,
+    241,
+    25,
+    93,
+    71,
+    208,
+    34,
+    236,
+    121,
+    208,
+    74,
+    230,
+    52,
+    65,
+    225,
+    31,
+    201,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "AHsiwC15xSDzpDGEkyjErBvBUCb4fZUh84RjxVsVSzYz",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "9ZkuvrkpK8VRL4bVE6hTgLgGmHQ6QYtFs86mpLYHxEu3",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "CVmaerBr773B2vJThgAPRLawtQzECyATZk55iBHZE12N",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "AiRRbHbqDgLKxUehruWNhNkwcEaCzDaSWY8GB68VHMPF",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;

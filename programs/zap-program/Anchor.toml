@@ -1,0 +1,21 @@
+[toolchain]
+anchor_version = "0.31.1"
+solana_version = "2.3.13"
+package_manager = "pnpm"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+zap = "zapvX9M3uf5pvy4wRPAbQgdQsM1xmuiFnkfHKPvwMiz"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "pnpm ts-mocha --no-experimental-strip-types -p ./tsconfig.json -t 1000000 tests/**/*.ts"

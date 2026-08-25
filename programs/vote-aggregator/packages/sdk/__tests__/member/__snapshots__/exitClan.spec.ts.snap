@@ -1,0 +1,69 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`exit_clan instruction Works 1`] = `
+{
+  "data": [
+    252,
+    196,
+    92,
+    75,
+    230,
+    100,
+    192,
+    156,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "8PqxiGJB82pmgzvohZrSLJz3pzKmvDbkXNySf6V2KDVE",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "3Vq4TzPeLEGsDEpodMX8k3L6vXpebd55xEEz4V8U89LV",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "2JhhaS9cxYW2htRXtaAHy1qrAoaxRW1zGHesQEgNanKH",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "2WfcnvxBPRbw3dRHd4u6WR4GNhZRymqvBVSRLbBEhgU4",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "5fVvLAeBYETKMnmaqbrWNodai6Qorcuo5EMeJfbnHVFo",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "CWJWtfw2mtGyUe7HDY3Y4uVzZj4ziWsVgCHosLtQRjjf",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "8uizkvJfpMMCe27ifh8T5CefFu2xASF8HDN1MqgHnfdb",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "8tbwTQgLL1HGvUB4xzTm8rxiSabuWU9TUACzQNR64TEf",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "5zGp3YAiWdPUBVinF3oWhMnZ5cFCenfGUdL7aWwBDjx9",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "DGzm59v87rFpijVw6aiQtAAXk6FcZLpZ3SFPxdqrdnMX",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;

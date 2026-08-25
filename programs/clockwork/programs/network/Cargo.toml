@@ -1,0 +1,28 @@
+[package]
+name = "clockwork-network-program"
+version = "2.0.20"
+description = "Clockwork networking protocol"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+homepage = "https://clockwork.xyz"
+repository = "https://github.com/clockwork-xyz/clockwork"
+documentation = "https://docs.clockwork.xyz"
+readme = "./README.md"
+keywords = ["solana"]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "clockwork_network_program"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "clockwork-utils/idl-build"]
+
+[dependencies]
+anchor-lang = "0.30.0"
+anchor-spl = { features = ["mint", "token"], version = "0.30.0" }
+clockwork-utils = { path = "../../utils", version = "=2.0.20" }

@@ -1,0 +1,786 @@
+use crate::error::*;
+use crate::state::*;
+use anchor_lang::prelude::*;
+use anchor_spl::token::{Mint, Token, TokenAccount};
+
+#[allow(deprecated)]
+use anchor_lang::solana_program::bpf_loader_upgradeable::{self};
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(
+        init,
+        payer = signer,
+        space = Config::LEN,
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        init,
+        payer = signer,
+        space = VaultTokenAccountConfig::LEN,
+        seeds = [
+            b"vault_token_account_config",
+            config.key().as_ref(),
+        ],
+        bump
+    )]
+    pub vault_token_account_config: Account<'info, VaultTokenAccountConfig>,
+
+    #[account(
+        constraint = vault_token_account.mint == vault_token_mint.key() @ CustomErrorCode::InvalidMint
+    )]
+    pub vault_token_account: Account<'info, TokenAccount>,
+
+    /// CHECK: This is a PDA that acts as the redeem vault authority, validated by seeds constraint
+    /// This PDA will be set as the owner of the redeem_vault_token_account in the config
+    /// The redeem vault token account holds the deposited vault tokens (e.g., USDC)
+    /// and is controlled by this program via the redeem_vault_authority PDA
+    /// This ensures that only this program can move tokens out of the redeem vault
+    /// and prevents unauthorized access.
+    #[account(seeds =
+        [b"redeem_vault_authority"],
+        bump
+    )]
+    pub redeem_vault_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        constraint = redeem_vault_token_account.mint == vault_token_mint.key() @ CustomErrorCode::InvalidMint,
+        constraint = (redeem_vault_token_account.owner == signer.key() || redeem_vault_token_account.owner == redeem_vault_authority.key()) @ CustomErrorCode::InvalidAuthority
+    )]
+    pub redeem_vault_token_account: Account<'info, TokenAccount>,
+
+    pub vault_token_mint: Account<'info, Mint>,
+    pub mint: Account<'info, Mint>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+
+    /// CHECK: This is the program data account that contains the update authority
+    #[account(
+        constraint = program_data.key() == get_program_data_address(&crate::id()) @ CustomErrorCode::InvalidProgramData
+    )]
+    pub program_data: UncheckedAccount<'info>,
+
+    /// CHECK: The external program authorized to mint tokens via CPI
+    #[account(executable)]
+    pub allowed_external_mint_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct Pause<'info> {
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    pub signer: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct Deposit<'info> {
+    #[account(
+        seeds = [b"config"], 
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        seeds = [
+            b"vault_token_account_config",
+            config.key().as_ref(),
+        ],
+        bump = vault_token_account_config.bump,
+    )]
+    pub vault_token_account_config: Account<'info, VaultTokenAccountConfig>,
+
+    #[account(
+        mut,
+        token::mint = config.vault,
+        constraint = vault_token_account.mint == config.vault @ CustomErrorCode::InvalidVaultMint,
+        constraint = vault_token_account.owner == config.vault_authority @ CustomErrorCode::InvalidVaultAuthority,
+        constraint = vault_token_account.key() == vault_token_account_config.vault_token_account @ CustomErrorCode::InvalidVaultTokenAccount
+
+    )]
+    pub vault_token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = mint.key() == config.mint @ CustomErrorCode::InvalidMint
+    )]
+    pub mint: Account<'info, Mint>,
+
+    /// CHECK: This is a PDA that acts as mint authority, validated by seeds constraint
+    #[account(
+        seeds = [b"mint_authority"],
+        bump,
+        constraint = mint_authority.key() == mint.mint_authority.unwrap() @ CustomErrorCode::InvalidMintAuthority
+    )]
+    pub mint_authority: UncheckedAccount<'info>,
+
+    #[account()]
+    pub signer: Signer<'info>,
+
+    #[account(
+        mut,
+        token::mint = config.vault,
+        constraint = user_vault_token_account.mint == config.vault @ CustomErrorCode::InvalidVaultMint,
+        constraint = user_vault_token_account.owner == signer.key() @ CustomErrorCode::InvalidTokenOwner,
+        // Reject self-transfer deposits that would mint wYLDS without increasing vault balance.
+        constraint = user_vault_token_account.key() != vault_token_account.key() @ CustomErrorCode::DepositSelfTransfer
+    )]
+    pub user_vault_token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        token::mint = config.mint,
+        constraint = user_mint_token_account.mint == config.mint @ CustomErrorCode::InvalidMint,
+        constraint = user_mint_token_account.owner == signer.key() @ CustomErrorCode::InvalidTokenOwner
+    )]
+    pub user_mint_token_account: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+// Helper function to derive the program data address
+fn get_program_data_address(program_id: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[program_id.as_ref()], &bpf_loader_upgradeable::id()).0
+}
+
+#[derive(Accounts)]
+pub struct UpdateFreezeAdministrators<'info> {
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    /// CHECK: This is the program data account that contains the update authority
+    #[account(
+        constraint = program_data.key() == get_program_data_address(&crate::id()) @ CustomErrorCode::InvalidProgramData
+    )]
+    pub program_data: UncheckedAccount<'info>,
+
+    pub signer: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateRewardsAdministrators<'info> {
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    /// CHECK: This is the program data account that contains the update authority
+    #[account(
+        constraint = program_data.key() == get_program_data_address(&crate::id()) @ CustomErrorCode::InvalidProgramData
+    )]
+    pub program_data: UncheckedAccount<'info>,
+
+    pub signer: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct FreezeTokenAccount<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        mut,
+        constraint = token_account.mint == mint.key() @ CustomErrorCode::InvalidMint
+    )]
+    pub token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        constraint = mint.freeze_authority == Some(freeze_authority_pda.key()).into() @ CustomErrorCode::InvalidFreezeAuthority,
+        constraint = config.mint == mint.key() @ CustomErrorCode::InvalidMint
+    )]
+    pub mint: Account<'info, Mint>,
+
+    /// CHECK: This is the freeze authority PDA
+    #[account(
+        seeds = [b"freeze_authority"],
+        bump
+    )]
+    pub freeze_authority_pda: UncheckedAccount<'info>,
+
+    pub signer: Signer<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct ThawTokenAccount<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        mut,
+        constraint = token_account.mint == mint.key() @ CustomErrorCode::InvalidMint
+    )]
+    pub token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        constraint = mint.freeze_authority == Some(freeze_authority_pda.key()).into() @ CustomErrorCode::InvalidFreezeAuthority,
+        constraint = config.mint == mint.key() @ CustomErrorCode::InvalidMint
+    )]
+    pub mint: Account<'info, Mint>,
+
+    /// CHECK: This is the freeze authority PDA
+    #[account(
+        seeds = [b"freeze_authority"],
+        bump
+    )]
+    pub freeze_authority_pda: UncheckedAccount<'info>,
+
+    pub signer: Signer<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+// Admin posts an epoch Merkle root. Requires epoch caps initialized; enforces the global
+// max epoch cap and creates the per-epoch claimed counter. Claims mint wYLDS on demand.
+#[derive(Accounts)]
+#[instruction(index: u64)]
+pub struct CreateRewardsEpoch<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        seeds = [b"epoch_caps_config"],
+        bump = epoch_caps_config.bump
+    )]
+    pub epoch_caps_config: Account<'info, EpochCapsConfig>,
+
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    #[account(
+        init,
+        payer = admin,
+        space = RewardsEpoch::LEN,
+        seeds = [b"epoch", index.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub epoch: Account<'info, RewardsEpoch>,
+
+    /// Cumulative claim counter for this epoch.
+    #[account(
+        init,
+        payer = admin,
+        space = EpochClaimedAmount::LEN,
+        seeds = [b"epoch_claimed", index.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub epoch_claimed: Account<'info, EpochClaimedAmount>,
+
+    pub system_program: Program<'info, System>,
+}
+
+// User claims via Merkle proof; wYLDS are minted on demand.
+// Requires `epoch_caps_config` to be initialized. Cap enforcement runs when
+// `index >= first_capped_epoch`; `epoch_claimed` may still be empty for lower indices.
+#[derive(Accounts)]
+pub struct ClaimRewards<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    #[account(
+        seeds = [b"epoch", epoch.index.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub epoch: Account<'info, RewardsEpoch>,
+
+    #[account(
+        seeds = [b"epoch_caps_config"],
+        bump = epoch_caps_config.bump
+    )]
+    pub epoch_caps_config: Account<'info, EpochCapsConfig>,
+
+    /// CHECK: Per-epoch claimed counter PDA; may be uninitialized for epochs below `first_capped_epoch`.
+    #[account(
+        mut,
+        seeds = [b"epoch_claimed", epoch.index.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub epoch_claimed: UncheckedAccount<'info>,
+
+    #[account(
+        init,
+        payer = user,
+        space = ClaimRecord::LEN,
+        seeds = [b"claim", epoch.key().as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub claim_record: Account<'info, ClaimRecord>,
+
+    #[account(
+        mut,
+        constraint = mint.key() == config.mint @ CustomErrorCode::InvalidMint
+    )]
+    pub mint: Account<'info, Mint>,
+
+    /// CHECK: This is a PDA that acts as mint authority, validated by seeds constraint
+    #[account(
+        seeds = [b"mint_authority"],
+        bump,
+        constraint = mint_authority.key() == mint.mint_authority.unwrap() @ CustomErrorCode::InvalidMintAuthority
+    )]
+    pub mint_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        constraint = user_mint_token_account.mint == mint.key() @ CustomErrorCode::InvalidMint,
+        constraint = user_mint_token_account.owner == user.key() @ CustomErrorCode::InvalidTokenOwner
+    )]
+    pub user_mint_token_account: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+/// One-shot initializer for epoch caps (upgrade authority only).
+#[derive(Accounts)]
+pub struct InitializeEpochCaps<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        init,
+        payer = signer,
+        space = EpochCapsConfig::LEN,
+        seeds = [b"epoch_caps_config"],
+        bump
+    )]
+    pub epoch_caps_config: Account<'info, EpochCapsConfig>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    /// CHECK: Program data account that contains the upgrade authority
+    #[account(
+        constraint = program_data.key() == get_program_data_address(&crate::id()) @ CustomErrorCode::InvalidProgramData
+    )]
+    pub program_data: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Updates the global max epoch cap (upgrade authority only). Affects future creates only.
+#[derive(Accounts)]
+pub struct UpdateMaxEpochCap<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        mut,
+        seeds = [b"epoch_caps_config"],
+        bump = epoch_caps_config.bump
+    )]
+    pub epoch_caps_config: Account<'info, EpochCapsConfig>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    /// CHECK: Program data account that contains the upgrade authority
+    #[account(
+        constraint = program_data.key() == get_program_data_address(&crate::id()) @ CustomErrorCode::InvalidProgramData
+    )]
+    pub program_data: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct RequestRedeem<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    #[account(
+        mut,
+        constraint = user_mint_token_account.mint == mint.key() @ CustomErrorCode::InvalidMint,
+        constraint = user_mint_token_account.owner == signer.key() @ CustomErrorCode::InvalidTokenOwner
+    )]
+    pub user_mint_token_account: Account<'info, TokenAccount>,
+
+    // NOTE: payer is the user (signer), NOT the PDA
+    #[account(
+        init,
+        payer = signer,
+        space = RedemptionRequest::LEN,
+        seeds = [b"redemption_request", signer.key().as_ref()],
+        bump
+    )]
+    pub redemption_request: Account<'info, RedemptionRequest>,
+
+    /// CHECK: PDA delegate/authority; NOT a signer, NOT a payer
+    #[account(
+        seeds = [b"redeem_vault_authority"],
+        bump
+    )]
+    pub redeem_vault_authority: AccountInfo<'info>,
+
+    #[account(
+        constraint = mint.key() == config.mint @ CustomErrorCode::InvalidMint
+    )]
+    pub mint: Account<'info, Mint>,
+
+    #[account(
+        seeds = [b"config"], 
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct CompleteRedeem<'info> {
+    #[account()]
+    pub admin: Signer<'info>,
+
+    /// The original user (to validate and to receive close rent)
+    /// (Not required to be a signer here.)
+    /// must be writeable to close the account = user will transfer rent to user
+    #[account(mut)]
+    pub user: SystemAccount<'info>,
+
+    #[account(
+        mut,
+        close = user,   // refund rent to the original user
+        seeds = [b"redemption_request", user.key().as_ref()],
+        bump = redemption_request.bump
+        // optionally: has_one = user,
+    )]
+    pub redemption_request: Account<'info, RedemptionRequest>,
+
+    #[account(
+        mut,
+        constraint = user_mint_token_account.mint == config.mint @ CustomErrorCode::InvalidMint,
+        constraint = user_mint_token_account.owner == user.key() @ CustomErrorCode::InvalidTokenOwner
+    )]
+    pub user_mint_token_account: Account<'info, TokenAccount>, // wYLDS
+
+    #[account(
+        mut,
+        constraint = user_vault_token_account.mint == config.vault @ CustomErrorCode::InvalidVaultMint,
+        constraint = user_vault_token_account.owner == user.key() @ CustomErrorCode::InvalidTokenOwner
+    )]
+    pub user_vault_token_account: Account<'info, TokenAccount>, // USDC dest
+
+    #[account(
+        mut,
+        constraint = redeem_vault_token_account.mint == config.vault @ CustomErrorCode::InvalidVaultMint,
+        constraint = redeem_vault_token_account.owner == redeem_vault_authority.key() @ CustomErrorCode::InvalidVaultAuthority
+    )]
+    pub redeem_vault_token_account: Account<'info, TokenAccount>, // USDC source
+
+    #[account(
+        mut,
+        constraint = mint.key() == redemption_request.mint,
+        constraint = mint.key() == config.mint @ CustomErrorCode::InvalidMint
+    )]
+    pub mint: Account<'info, Mint>, // wYLDS mint
+
+    /// CHECK: PDA authority (delegate & vault authority)
+    #[account(
+        seeds = [b"redeem_vault_authority"],
+        bump
+    )]
+    pub redeem_vault_authority: AccountInfo<'info>,
+
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct ExternalProgramMint<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, Config>,
+
+    /// The program making this CPI call. Must be authorized via config.allowed_external_mint_program
+    /// (legacy single-program field) or registered in the allowed_external_mint_programs PDA.
+    /// Passing the caller's program as an explicit account allows the seeds constraint on
+    /// external_mint_authority below to bind to it, cryptographically proving CPI origin.
+    /// CHECK: Authorization is checked in processor against the allowed program list
+    #[account(executable)]
+    pub calling_program: AccountInfo<'info>,
+
+    /// PDA from the calling program that proves CPI origin. Anchor verifies that this
+    /// account's address is derived from [b"external_mint_authority"] under calling_program's
+    /// program id. Only calling_program can produce a valid signer for this PDA, so a valid
+    /// signature here proves the CPI came from calling_program and not an impersonator.
+    /// CHECK: Verified by seeds constraint against calling_program
+    #[account(
+        signer,
+        seeds = [b"external_mint_authority"],
+        seeds::program = calling_program.key(),
+        bump,
+    )]
+    pub external_mint_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        constraint = mint.key() == config.mint @ CustomErrorCode::InvalidMint
+    )]
+    pub mint: Account<'info, Mint>,
+
+    /// CHECK: This is a PDA that acts as mint authority, validated by seeds constraint
+    #[account(
+        seeds = [b"mint_authority"],
+        bump,
+        constraint = mint_authority.key() == mint.mint_authority.unwrap() @ CustomErrorCode::InvalidMintAuthority
+    )]
+    pub mint_authority: UncheckedAccount<'info>,
+
+    /// The rewards administrator who authorized this mint operation.
+    /// Must sign the outer transaction; that signer status is preserved across CPI so
+    /// vault-mint can independently verify authorization (not just list membership).
+    /// The calling program's `external_mint_authority` PDA remains the CPI program signer.
+    pub admin: Signer<'info>,
+    #[account(
+        mut,
+        constraint = destination.mint == mint.key() @ CustomErrorCode::InvalidMint
+    )]
+    pub destination: Account<'info, TokenAccount>,
+
+    /// Additional allowed programs PDA. When calling_program does not match the legacy
+    /// config.allowed_external_mint_program field, the processor checks this account.
+    /// This account is required in the instruction, so it must already exist on-chain
+    /// (e.g. created during program upgrade / migration via
+    /// register_allowed_external_mint_program, which uses init_if_needed) before callers
+    /// invoke external_program_mint. Until any programs are registered, account data may
+    /// be empty or too short to deserialize; the processor then treats the extended list
+    /// as empty and authorization falls through to the legacy field only.
+    /// CHECK: Seeds-validated; list membership is enforced in the processor
+    #[account(
+        seeds = [b"allowed_external_mint_programs", config.key().as_ref()],
+        bump,
+    )]
+    pub allowed_external_mint_programs: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+/// Registers an additional external program as authorized to call external_program_mint.
+/// Uses init_if_needed so the PDA is created on the first registration and updated on
+/// subsequent calls. Only callable by the program upgrade authority. Idempotent: re-registering
+/// a program that is already in the list is a no-op.
+#[derive(Accounts)]
+pub struct RegisterAllowedExternalMintProgram<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        init_if_needed,
+        payer = signer,
+        space = AllowedExternalMintPrograms::LEN,
+        seeds = [b"allowed_external_mint_programs", config.key().as_ref()],
+        bump
+    )]
+    pub allowed_external_mint_programs: Account<'info, AllowedExternalMintPrograms>,
+
+    #[account(
+        init_if_needed,
+        payer = signer,
+        space = ExternalMintProgramsLimitConfig::LEN,
+        seeds = [b"external_mint_programs_limit", config.key().as_ref()],
+        bump
+    )]
+    pub external_mint_programs_limit_config: Account<'info, ExternalMintProgramsLimitConfig>,
+
+    /// CHECK: The external program being registered as an authorized caller; must be executable
+    #[account(executable)]
+    pub external_program: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    /// CHECK: This is the program data account that contains the update authority
+    #[account(
+        constraint = program_data.key() == get_program_data_address(&crate::id()) @ CustomErrorCode::InvalidProgramData
+    )]
+    pub program_data: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Updates the registration limit used by register_allowed_external_mint_program.
+/// Only callable by the program upgrade authority.
+#[derive(Accounts)]
+pub struct UpdateExternalMintProgramsLimit<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        init_if_needed,
+        payer = signer,
+        space = ExternalMintProgramsLimitConfig::LEN,
+        seeds = [b"external_mint_programs_limit", config.key().as_ref()],
+        bump
+    )]
+    pub external_mint_programs_limit_config: Account<'info, ExternalMintProgramsLimitConfig>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    /// CHECK: This is the program data account that contains the update authority
+    #[account(
+        constraint = program_data.key() == get_program_data_address(&crate::id()) @ CustomErrorCode::InvalidProgramData
+    )]
+    pub program_data: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateVaultTokenAccount<'info> {
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        mut,
+        seeds = [
+            b"vault_token_account_config",
+            config.key().as_ref(),
+        ],
+        bump
+    )]
+    pub vault_token_account_config: Account<'info, VaultTokenAccountConfig>,
+
+    #[account(
+        mut,
+        token::mint = config.vault,
+        constraint = vault_token_account.mint == config.vault @ CustomErrorCode::InvalidVaultMint,
+    )]
+    pub vault_token_account: Account<'info, TokenAccount>,
+
+    /// CHECK: This is the program data account that contains the update authority
+    #[account(
+        constraint = program_data.key() == get_program_data_address(&crate::id()) @ CustomErrorCode::InvalidProgramData
+    )]
+    pub program_data: UncheckedAccount<'info>,
+
+    pub signer: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct SweepRedeemVaultFunds<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+
+    /// CHECK: This is a PDA that acts as the redeem vault authority, validated by seeds constraint
+    #[account(
+        seeds =
+        [b"redeem_vault_authority"],
+        bump
+    )]
+    pub redeem_vault_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        constraint = redeem_vault_token_account.mint == config.vault @ CustomErrorCode::InvalidVaultMint,
+        constraint = redeem_vault_token_account.owner == redeem_vault_authority.key() @ CustomErrorCode::InvalidVaultAuthority
+    )]
+    pub redeem_vault_token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        token::mint = config.vault,
+        constraint = vault_token_account.mint == config.vault @ CustomErrorCode::InvalidVaultMint,
+        constraint = vault_token_account.owner == config.vault_authority @ CustomErrorCode::InvalidVaultAuthority
+    )]
+    pub vault_token_account: Account<'info, TokenAccount>,
+
+    pub signer: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct SetVaultTokenAccountConfig<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, Config>,
+
+    // Precise vault token account to verify in deposit
+    #[account(
+        constraint = vault_token_account.mint == config.vault @ CustomErrorCode::InvalidVaultMint,
+        constraint = vault_token_account.owner == config.vault_authority @ CustomErrorCode::InvalidVaultAuthority,
+    )]
+    pub vault_token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        init,
+        payer = signer,
+        space = VaultTokenAccountConfig::LEN,
+        seeds = [
+            b"vault_token_account_config",
+            config.key().as_ref(),
+        ],
+        bump
+    )]
+    pub vault_token_account_config: Account<'info, VaultTokenAccountConfig>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>, // Must be program update authority
+
+    /// CHECK: This is the program data account that contains the update authority
+    #[account(
+        constraint = program_data.key() == get_program_data_address(&crate::id()) @ CustomErrorCode::InvalidProgramData
+    )]
+    pub program_data: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}

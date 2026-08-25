@@ -1,0 +1,49 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`create_member instruction Works 1`] = `
+{
+  "data": [
+    49,
+    46,
+    45,
+    241,
+    122,
+    143,
+    136,
+    73,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "EQTpNDcU1ghKSz2yMxQhPWsZLFrNh3poVhqwZk6mUams",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "2bf8nZBj1W7FJ9ZrAhCYbUzR9AXJEMjEy2ViT3Yp1xu7",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "5Gf1EKXxQdkJ6Eqjk65NwouTbLwBEjZy88fUoG3Twjb7",
+    },
+    {
+      "isSigner": true,
+      "isWritable": true,
+      "pubkey": "11111111111111111111111111111111",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "9xPDdy5h269pdhcVk66wVzsE2dCVEZzRSggUXpniv9ab",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "11111111111111111111111111111111",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;

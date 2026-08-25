@@ -1,0 +1,1738 @@
+use core::fmt;
+use std::ops::Mul;
+
+use anchor_lang::{err, prelude::*, require, solana_program::clock::Slot, Result};
+use common::{update_prev_aum, Holdings, HoldingsBuffer, Invested};
+use kamino_lending::{
+    fraction::Fraction,
+    utils::{AnyAccountLoader, FractionExtra},
+    Reserve,
+};
+use rust_decimal::prelude::ToPrimitive;
+use solana_program::pubkey::Pubkey;
+
+use super::{
+    effects::{
+        DepositEffects, InvestEffects, InvestingDirection, RedeemInKindEffects, WithdrawEffects,
+        WithdrawPendingFeesEffects,
+    },
+    reserve_whitelist_operations,
+};
+use crate::{
+    kmsg, kmsg_sized, operations::vault_operations::common::get_shares_to_mint,
+    utils::consts::SECONDS_PER_YEAR, xmsg, CtokenCap, GlobalConfig, KaminoVaultError,
+    ReserveWhitelistEntry, VaultState, MAX_RESERVES,
+};
+
+pub fn initialize(
+    vault: &mut VaultState,
+    token_decimals: u8,
+    shares_decimals: u8,
+    current_timestamp: u64,
+) -> Result<()> {
+    xmsg!(
+        "Initializing with token_decimals={} shares_decimals={}",
+        token_decimals,
+        shares_decimals
+    );
+
+    vault.token_mint_decimals = token_decimals as u64;
+    vault.shares_mint_decimals = shares_decimals as u64;
+    vault.token_available = 0;
+    vault.shares_issued = 0;
+    vault.creation_timestamp = current_timestamp;
+    vault.deposit_cap = u64::MAX;
+
+    vault.validate()
+}
+
+#[inline(never)]
+pub fn deposit<'info, T>(
+    vault: &mut VaultState,
+    reserves_iter: impl Iterator<Item = T>,
+    max_amount: u64,
+    min_shares_out: u64,
+    current_timestamp: u64,
+) -> Result<DepositEffects>
+where
+    T: AnyAccountLoader<'info, Reserve>,
+{
+    refresh_rewards(vault, current_timestamp)?;
+
+    let num_reserve: u64 = vault
+        .get_reserves_with_allocation_count()
+        .try_into()
+        .unwrap();
+    let crank_funds_to_deposit = num_reserve * vault.crank_fund_fee_per_reserve;
+
+    let raw_max_user_tokens_to_deposit = max_amount - crank_funds_to_deposit;
+
+    let holdings = HoldingsBuffer::compute_once(vault, reserves_iter)?;
+    kmsg!(
+        "holdings available {} total invested {}",
+        holdings.available,
+        holdings.invested.total
+    );
+    kmsg!("shares_issued before deposit {}", vault.shares_issued);
+
+    charge_fees(vault, &holdings.invested, current_timestamp)?;
+    let current_vault_aum = vault.compute_aum(&holdings.invested.total)?;
+    let max_depositable_to_cap = common::get_max_depositable_in_vault(vault, current_vault_aum);
+    if max_depositable_to_cap == 0 {
+        msg!(
+            "vault deposit cap reached: current_vault_aum {} deposit_cap {}",
+            current_vault_aum.to_display(),
+            vault.deposit_cap
+        );
+        return err!(KaminoVaultError::VaultDepositCapReached);
+    }
+    let deposit_limited_by_cap = raw_max_user_tokens_to_deposit > max_depositable_to_cap;
+    let max_user_tokens_to_deposit = if deposit_limited_by_cap {
+        msg!("max_user_tokens_to_deposit {} is greater than max_depositable_to_cap {}, using max_depositable_to_cap", raw_max_user_tokens_to_deposit, max_depositable_to_cap);
+        max_depositable_to_cap
+    } else {
+        raw_max_user_tokens_to_deposit
+    };
+
+    let shares_to_mint = get_shares_to_mint(
+        current_vault_aum,
+        max_user_tokens_to_deposit,
+        vault.shares_issued,
+    )?;
+    let user_tokens_to_deposit = common::compute_amount_to_deposit_from_shares_to_mint(
+        vault.shares_issued,
+        current_vault_aum,
+        shares_to_mint,
+    );
+
+    if user_tokens_to_deposit < vault.min_deposit_amount {
+        msg!("user_tokens_to_deposit {} is less than min_deposit_amount {}, with max_depositable_to_cap {}", user_tokens_to_deposit, vault.min_deposit_amount, max_depositable_to_cap);
+        if deposit_limited_by_cap {
+            return err!(KaminoVaultError::VaultDepositCapReached);
+        }
+        return err!(KaminoVaultError::DepositAmountBelowMinimum);
+    }
+
+    if shares_to_mint == 0 {
+        return err!(KaminoVaultError::DepositAmountsZeroShares);
+    }
+
+    require_gte!(
+        shares_to_mint,
+        min_shares_out,
+        KaminoVaultError::SharesOutBelowMinimum
+    );
+
+   
+    common::deposit_into_vault(vault, user_tokens_to_deposit);
+    common::mint_shares(vault, shares_to_mint);
+    common::update_prev_aum(
+        vault,
+        current_vault_aum + Fraction::from(user_tokens_to_deposit),
+    );
+    common::deposit_crank_funds(vault, crank_funds_to_deposit);
+
+    Ok(DepositEffects {
+        shares_to_mint,
+        token_to_deposit: user_tokens_to_deposit,
+        crank_funds_to_deposit,
+    })
+}
+
+struct VaultHoldingsAndCurrentAUM {
+    holdings: Box<Holdings>,
+    current_vault_aum: Fraction,
+}
+
+
+
+
+
+fn update_vault_fees_and_validate_holdings_aum<'info, T>(
+    vault: &mut VaultState,
+    reserves_iter: impl Iterator<Item = T>,
+    current_timestamp: u64,
+) -> Result<VaultHoldingsAndCurrentAUM>
+where
+    T: AnyAccountLoader<'info, Reserve>,
+{
+   
+    let holdings = HoldingsBuffer::compute_once(vault, reserves_iter)?;
+
+    charge_fees(vault, &holdings.invested, current_timestamp)?;
+
+   
+    let current_vault_aum = vault.compute_aum(&holdings.invested.total)?;
+
+    require!(
+        current_vault_aum > Fraction::ZERO,
+        KaminoVaultError::VaultAUMZero
+    );
+
+    Ok(VaultHoldingsAndCurrentAUM {
+        holdings,
+        current_vault_aum,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+pub fn withdraw<'info, T>(
+    vault: &mut VaultState,
+    global_config: &GlobalConfig,
+    reserve_address_to_withdraw_from: Option<&Pubkey>,
+    reserve_state_to_withdraw_from: Option<&Reserve>,
+    reserves_iter: impl Iterator<Item = T>,
+    current_timestamp: u64,
+    number_of_shares: u64,
+    reserve_ctokens_owned: Option<u64>,
+) -> Result<WithdrawEffects>
+where
+    T: AnyAccountLoader<'info, Reserve>,
+{
+    require!(
+        number_of_shares > 0,
+        KaminoVaultError::CannotWithdrawZeroShares
+    );
+
+    refresh_rewards(vault, current_timestamp)?;
+
+    let VaultHoldingsAndCurrentAUM {
+        holdings,
+        current_vault_aum,
+    } = update_vault_fees_and_validate_holdings_aum(vault, reserves_iter, current_timestamp)?;
+
+    let total_shares_supply = vault.shares_issued;
+
+    let total_liquidity_for_user_with_penalty = common::compute_user_total_received_on_withdraw(
+        total_shares_supply,
+        current_vault_aum,
+        number_of_shares,
+    );
+    require!(
+        total_liquidity_for_user_with_penalty > 0,
+        KaminoVaultError::CannotWithdrawZeroLamports
+    );
+
+    let withdrawal_penalty =
+        common::get_withdrawal_penalty(vault, global_config, total_liquidity_for_user_with_penalty);
+    require!(
+        withdrawal_penalty < total_liquidity_for_user_with_penalty,
+        KaminoVaultError::WithdrawAmountLessThanWithdrawalPenalty
+    );
+
+    let total_for_user = total_liquidity_for_user_with_penalty - withdrawal_penalty;
+
+   
+   
+    let available_to_send_to_user = holdings.available.min(total_for_user);
+
+    let (
+        invested_liquidity_to_send_to_user_f,
+        invested_liquidity_to_send_to_user,
+        invested_liquidity_to_disinvest,
+        invested_to_disinvest_ctokens,
+        liquidity_rounding_error,
+    ) = if let Some(reserve_address) = reserve_address_to_withdraw_from {
+        let invested_in_reserve = holdings.invested.in_reserve(reserve_address);
+       
+
+        let invested_liquidity_to_send_to_user_f = invested_in_reserve
+            .liquidity_amount
+            .min(Fraction::from(total_for_user - available_to_send_to_user));
+
+       
+        if invested_liquidity_to_send_to_user_f.eq(&Fraction::ZERO) {
+            (Fraction::ZERO, 0, 0, 0, 0)
+        } else {
+            let reserve_state_to_withdraw_from = reserve_state_to_withdraw_from.unwrap();
+            let exchange_rate = reserve_state_to_withdraw_from.collateral_exchange_rate();
+            let invested_liquidity_to_send_to_user =
+                invested_liquidity_to_send_to_user_f.to_floor::<u64>();
+
+           
+            let invested_to_disinvest_ctokens: u64 =
+                exchange_rate.liquidity_to_collateral_ceil(invested_liquidity_to_send_to_user);
+            let max_ctokens_to_disinvest = reserve_ctokens_owned.unwrap_or(0);
+           
+            let invested_to_disinvest_ctokens =
+                invested_to_disinvest_ctokens.min(max_ctokens_to_disinvest);
+
+           
+            let invested_liquidity_to_disinvest =
+                exchange_rate.collateral_to_liquidity(invested_to_disinvest_ctokens);
+            let invested_liquidity_to_disinvest_f = exchange_rate.fraction_collateral_to_liquidity(
+                Fraction::from_num(invested_to_disinvest_ctokens),
+            );
+
+           
+            let liquidity_rounding_error: u64 = if invested_liquidity_to_disinvest_f.frac()
+                > Fraction::ZERO
+                && invested_liquidity_to_disinvest_f.frac()
+                    > invested_liquidity_to_send_to_user_f.frac()
+            {
+                1
+            } else {
+                0
+            };
+            (
+                invested_liquidity_to_send_to_user_f,
+                invested_liquidity_to_send_to_user,
+                invested_liquidity_to_disinvest,
+                invested_to_disinvest_ctokens,
+                liquidity_rounding_error,
+            )
+        }
+    } else {
+        (Fraction::ZERO, 0, 0, 0, 0)
+    };
+
+   
+    let theoretical_amount_to_send_to_user_f =
+        Fraction::from(available_to_send_to_user + withdrawal_penalty)
+            + invested_liquidity_to_send_to_user_f;
+    let actual_invested_liquidity_to_send_to_user =
+        invested_liquidity_to_send_to_user - liquidity_rounding_error;
+
+    let shares_to_burn = common::calculate_shares_to_burn(
+        theoretical_amount_to_send_to_user_f,
+        total_shares_supply,
+        current_vault_aum,
+        number_of_shares,
+    );
+
+    let disinvested_amount_left_in_vault =
+        invested_liquidity_to_disinvest - actual_invested_liquidity_to_send_to_user;
+
+   
+    if shares_to_burn == 0 {
+        return err!(KaminoVaultError::WithdrawResultsInZeroShares);
+    }
+
+    kmsg!("Available {}", holdings.available);
+    kmsg!("Total invested {:?}", holdings.invested.total.to_display());
+    kmsg!("Available to send to user {}", available_to_send_to_user);
+    kmsg!("Shares to burn {}", shares_to_burn);
+    kmsg!("Disinvest liq {}", invested_liquidity_to_send_to_user);
+    kmsg!(
+        "Actual invested liq {}",
+        actual_invested_liquidity_to_send_to_user
+    );
+    kmsg!("Expected c tokens {}", invested_to_disinvest_ctokens);
+    kmsg!("Expected liq {}", invested_liquidity_to_disinvest);
+
+    if available_to_send_to_user + invested_liquidity_to_send_to_user <= vault.min_withdraw_amount {
+        return err!(KaminoVaultError::WithdrawAmountBelowMinimum);
+    }
+
+    if let Some(reserve_address) = reserve_address_to_withdraw_from {
+        if !vault.is_allocated_to_reserve(*reserve_address) {
+            return err!(KaminoVaultError::ReserveNotPartOfAllocations);
+        }
+    }
+
+   
+    common::withdraw_from_accounting(vault, available_to_send_to_user, shares_to_burn);
+    common::deposit_into_vault(vault, disinvested_amount_left_in_vault);
+    if let Some(reserve_address) = reserve_address_to_withdraw_from {
+        common::withdraw_from_vault_allocation(
+            vault,
+            invested_to_disinvest_ctokens,
+            reserve_address,
+        )?;
+    }
+
+   
+    let net_amount_withdrawn_from_vault =
+        theoretical_amount_to_send_to_user_f - Fraction::from(withdrawal_penalty);
+    common::update_prev_aum(vault, current_vault_aum - net_amount_withdrawn_from_vault);
+
+    Ok(WithdrawEffects {
+        shares_to_burn,
+        available_to_send_to_user,
+        invested_to_disinvest_ctokens,
+        invested_liquidity_to_send_to_user: actual_invested_liquidity_to_send_to_user,
+        invested_liquidity_to_disinvest,
+    })
+}
+
+#[inline(never)]
+pub fn withdraw_pending_fees<'info, T>(
+    vault: &mut VaultState,
+    reserve_address_to_withdraw_from: &Pubkey,
+    reserve_state_to_withdraw_from: &Reserve,
+    reserves_iter: impl Iterator<Item = T>,
+    current_timestamp: u64,
+) -> Result<WithdrawPendingFeesEffects>
+where
+    T: AnyAccountLoader<'info, Reserve>,
+{
+    refresh_rewards(vault, current_timestamp)?;
+
+   
+    let holdings = HoldingsBuffer::compute_once(vault, reserves_iter)?;
+    let invested = &holdings.invested;
+    let available = holdings.available;
+    let total_sum = holdings.total_sum;
+    msg!(
+        "holdings invested {:?} available {:?} total_sum {}",
+        invested,
+        available,
+        total_sum.to_display()
+    );
+
+    charge_fees(vault, invested, current_timestamp)?;
+
+    let total_fees = Fraction::from_bits(vault.pending_fees_sf);
+
+   
+    let available_to_send_to_user_f = Fraction::from(available).min(total_fees);
+    let available_to_send_to_user = available_to_send_to_user_f.to_floor::<u64>();
+
+    let invested_in_reserve = invested.in_reserve(reserve_address_to_withdraw_from);
+    let invested_liquidity_to_send_to_user_f = invested_in_reserve
+        .liquidity_amount
+        .min(total_fees - available_to_send_to_user_f);
+    let invested_liquidity_to_send_to_user: u64 = invested_liquidity_to_send_to_user_f.to_floor();
+
+    let exchange_rate = reserve_state_to_withdraw_from.collateral_exchange_rate();
+
+    let invested_to_disinvest_ctokens: u64 =
+        exchange_rate.liquidity_to_collateral_ceil(invested_liquidity_to_send_to_user);
+
+   
+   
+    let invested_liquidity_to_disinvest =
+        exchange_rate.collateral_to_liquidity(invested_to_disinvest_ctokens);
+
+    let liquidity_rounding_error = exchange_rate
+        .collateral_to_liquidity_ceil(invested_to_disinvest_ctokens)
+        - invested_liquidity_to_disinvest;
+
+   
+   
+   
+    let actual_invested_liquidity_to_send_to_user =
+        invested_liquidity_to_send_to_user - liquidity_rounding_error;
+    let disinvested_amount_left_in_vault =
+        invested_liquidity_to_disinvest - actual_invested_liquidity_to_send_to_user;
+
+   
+    common::withdraw_from_vault(vault, available_to_send_to_user);
+    common::deposit_into_vault(vault, disinvested_amount_left_in_vault);
+    common::withdraw_from_vault_allocation(
+        vault,
+        invested_to_disinvest_ctokens,
+        reserve_address_to_withdraw_from,
+    )?;
+
+    common::update_pending_fees(
+        vault,
+        total_fees
+            - Fraction::from(available_to_send_to_user)
+            - Fraction::from(invested_liquidity_to_send_to_user),
+    );
+
+    Ok(WithdrawPendingFeesEffects {
+        available_to_send_to_user,
+        invested_to_disinvest_ctokens,
+        invested_liquidity_to_send_to_user: actual_invested_liquidity_to_send_to_user,
+        invested_liquidity_to_disinvest,
+    })
+}
+
+pub fn give_up_pending_fee<'info, T>(
+    vault: &mut VaultState,
+    reserves_iter: impl Iterator<Item = T>,
+    current_timestamp: u64,
+    max_amount_to_give_up: u64,
+) -> Result<()>
+where
+    T: AnyAccountLoader<'info, Reserve>,
+{
+    refresh_rewards(vault, current_timestamp)?;
+    let holdings = HoldingsBuffer::compute_once(vault, reserves_iter)?;
+    holdings.log();
+    let invested = &holdings.invested;
+
+    charge_fees(vault, invested, current_timestamp)?;
+    let amount = Fraction::from(max_amount_to_give_up);
+    let pending_fees = vault.get_pending_fees();
+    let amount_to_give_up = amount.min(pending_fees);
+
+    msg!(
+        "Giving up {} of {} pending fees",
+        amount_to_give_up.to_display(),
+        pending_fees.to_display()
+    );
+
+    let new_pending_fees = pending_fees - amount_to_give_up;
+
+    common::update_pending_fees(vault, new_pending_fees);
+
+   
+   
+
+    vault.last_fee_charge_timestamp = current_timestamp;
+    let prev_aum = holdings.total_sum.saturating_sub(new_pending_fees);
+    kmsg_sized!(
+        150,
+        "holdings.total_sum {}",
+        holdings.total_sum.to_display()
+    );
+    kmsg_sized!(150, "new_pending_fees {}", new_pending_fees.to_display());
+    kmsg_sized!(150, "prev_aum {}", prev_aum.to_display());
+    common::update_prev_aum(vault, prev_aum);
+
+    Ok(())
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+pub fn invest<'info, T>(
+    vault: &mut VaultState,
+    reserves_iter: impl Iterator<Item = T>,
+    reserve: &Reserve,
+    reserve_address: &Pubkey,
+    current_slot: Slot,
+    current_timestamp: u64,
+    reserve_whitelist_entry: Option<&ReserveWhitelistEntry>,
+    max_amount: u64,
+) -> Result<InvestEffects>
+where
+    T: AnyAccountLoader<'info, Reserve>,
+{
+    let mut holdings_buffer = HoldingsBuffer::new();
+    let holdings = holdings_buffer.compute(vault, reserves_iter)?;
+    invest_with_holdings_snapshot(
+        vault,
+        reserve,
+        reserve_address,
+        current_slot,
+        current_timestamp,
+        reserve_whitelist_entry,
+        max_amount,
+        &holdings,
+    )
+}
+
+
+
+
+
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+pub fn invest_with_holdings_snapshot(
+    vault: &mut VaultState,
+    reserve: &Reserve,
+    reserve_address: &Pubkey,
+    current_slot: Slot,
+    current_timestamp: u64,
+    reserve_whitelist_entry: Option<&ReserveWhitelistEntry>,
+    max_amount: u64,
+    holdings: &Holdings,
+) -> Result<InvestEffects> {
+    require!(
+        max_amount > 0,
+        KaminoVaultError::MaxInvestAmountMustBeGreaterThanZero
+    );
+
+    kmsg_sized!(50, "holdings available {}", holdings.available);
+    kmsg_sized!(
+        50,
+        "holdings invested {}",
+        holdings.invested.total.to_display()
+    );
+    let invested = &holdings.invested;
+
+    charge_fees(vault, invested, current_timestamp)?;
+
+    vault.refresh_target_allocations(invested)?;
+
+    if !vault.is_allocated_to_reserve(*reserve_address) {
+        return err!(KaminoVaultError::ReserveNotPartOfAllocations);
+    }
+
+    let allocation_for_reserve = vault.allocation_for_reserve(reserve_address)?;
+    kmsg!(
+        "alloc_for_reserve address {} weight {} cap {} ctoken cap {}",
+        allocation_for_reserve.reserve,
+        allocation_for_reserve.target_allocation_weight,
+        allocation_for_reserve.token_allocation_cap,
+        allocation_for_reserve.ctoken_allocation_cap().raw()
+    );
+
+    if current_slot < allocation_for_reserve.last_invest_slot + vault.min_invest_delay_slots {
+        return err!(KaminoVaultError::InvestTooSoon);
+    }
+
+    let invested_in_reserve = invested.in_reserve(reserve_address);
+
+    let actual_tokens_invested = invested_in_reserve.liquidity_amount;
+    let target_tokens_invested = allocation_for_reserve.get_token_target_allocation();
+    let (liquidity_f, direction) = if actual_tokens_invested > target_tokens_invested {
+        let diff = actual_tokens_invested - target_tokens_invested;
+        kmsg!(
+            "Actual {} target {}, need to Subtract {}",
+            actual_tokens_invested.to_display(),
+            target_tokens_invested.to_display(),
+            diff.to_display()
+        );
+
+        (diff, InvestingDirection::Subtract)
+    } else {
+        let diff = target_tokens_invested - actual_tokens_invested;
+        let available = common::available_to_invest(vault);
+        kmsg!(
+            "Actual {} target {} available {}, need to Add {}",
+            actual_tokens_invested.to_display(),
+            target_tokens_invested.to_display(),
+            available,
+            diff.to_display()
+        );
+
+        (diff.min(Fraction::from(available)), InvestingDirection::Add)
+    };
+
+    let max_amount_f = Fraction::from(max_amount);
+    let is_capped_by_max_amount = liquidity_f > max_amount_f;
+    let liquidity_f = if is_capped_by_max_amount {
+        kmsg!(
+            "Amount to move {} is capped by max_amount {}",
+            liquidity_f.to_display(),
+            max_amount
+        );
+        max_amount_f
+    } else {
+        liquidity_f
+    };
+
+   
+   
+    let is_full_evacuation = allocation_for_reserve.target_allocation_weight == 0
+        && !is_capped_by_max_amount
+        && matches!(direction, InvestingDirection::Subtract);
+
+    reserve_whitelist_operations::check_can_invest(vault, direction, reserve_whitelist_entry)?;
+
+    let exchange_rate = reserve.collateral_exchange_rate();
+    let collateral_amount = if is_full_evacuation {
+        allocation_for_reserve.ctoken_allocation
+    } else {
+        if liquidity_f <= vault.min_invest_amount {
+            return err!(KaminoVaultError::InvestAmountBelowMinimum);
+        }
+        exchange_rate
+            .fraction_liquidity_to_collateral(liquidity_f)
+            .to_floor()
+    };
+
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+    let liquidity_amount_floor = exchange_rate.collateral_to_liquidity(collateral_amount);
+    let liquidity_amount_ceil = exchange_rate.collateral_to_liquidity_ceil(collateral_amount);
+    let liquidity_amount: u64;
+    let mut rounding_loss: u64 = liquidity_amount_ceil - liquidity_amount_floor;
+
+    match direction {
+        InvestingDirection::Add => {
+           
+            liquidity_amount = liquidity_amount_ceil;
+            common::withdraw_from_vault(vault, liquidity_amount - rounding_loss);
+            common::deposit_into_vault_allocation(vault, collateral_amount, reserve_address)?;
+        }
+        InvestingDirection::Subtract => {
+           
+            liquidity_amount = liquidity_amount_floor;
+            common::deposit_into_vault(vault, liquidity_amount + rounding_loss);
+            common::withdraw_from_vault_allocation(vault, collateral_amount, reserve_address)?;
+        }
+    }
+
+   
+   
+    if !is_capped_by_max_amount && vault.available_crank_funds >= rounding_loss {
+        vault.available_crank_funds -= rounding_loss;
+        rounding_loss = 0;
+    }
+
+   
+   
+   
+    if !is_capped_by_max_amount {
+        vault.set_allocation_last_invest_slot(reserve_address, current_slot)?;
+    }
+    Ok(InvestEffects {
+        liquidity_amount,
+        direction,
+        collateral_amount,
+        rounding_loss,
+    })
+}
+
+pub struct RedeemInKindParams<'a, T> {
+    pub vault_state: &'a mut VaultState,
+    pub global_config: &'a GlobalConfig,
+    pub reserve_address: &'a Pubkey,
+    pub reserve_state: &'a Reserve,
+    pub reserves_iter: T,
+    pub shares_amount: u64,
+    pub clock: &'a Clock,
+}
+
+#[inline(never)]
+pub fn redeem_in_kind<'info, T>(
+    RedeemInKindParams {
+        vault_state,
+        global_config,
+        reserve_address,
+        reserve_state,
+        reserves_iter,
+        shares_amount,
+        clock,
+    }: RedeemInKindParams<'_, T>,
+) -> Result<RedeemInKindEffects>
+where
+    T: Iterator,
+    T::Item: AnyAccountLoader<'info, Reserve>,
+{
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+    require!(
+        shares_amount > 0,
+        KaminoVaultError::CannotWithdrawZeroShares
+    );
+
+    let current_timestamp: u64 = clock.unix_timestamp.try_into().unwrap();
+    refresh_rewards(vault_state, current_timestamp)?;
+
+    let reserve_allocation = vault_state.allocation_for_reserve(reserve_address)?;
+    let reserve_ctokens_owned = reserve_allocation.ctoken_allocation;
+
+    let VaultHoldingsAndCurrentAUM {
+        holdings: _,
+        current_vault_aum,
+    } = update_vault_fees_and_validate_holdings_aum(
+        vault_state,
+        reserves_iter,
+        clock.unix_timestamp.try_into().unwrap(),
+    )?;
+
+    let total_shares_supply = vault_state.shares_issued;
+
+    let total_liquidity_for_user_with_penalty_f =
+        common::compute_user_total_received_on_withdraw_fraction(
+            total_shares_supply,
+            current_vault_aum,
+            shares_amount,
+        );
+    require!(
+        total_liquidity_for_user_with_penalty_f > Fraction::ZERO,
+        KaminoVaultError::CannotWithdrawZeroLamports
+    );
+
+    let withdrawal_penalty_f = common::get_withdrawal_penalty_for_fraction_amount_inclusive(
+        vault_state,
+        global_config,
+        total_liquidity_for_user_with_penalty_f,
+    );
+    require!(
+        withdrawal_penalty_f < total_liquidity_for_user_with_penalty_f,
+        KaminoVaultError::WithdrawAmountLessThanWithdrawalPenalty
+    );
+
+    let total_liquidity_for_user = total_liquidity_for_user_with_penalty_f - withdrawal_penalty_f;
+
+   
+    let exchange_rate = reserve_state.collateral_exchange_rate();
+
+   
+   
+    let ctokens_to_send_to_user = exchange_rate
+        .fraction_liquidity_to_collateral(total_liquidity_for_user)
+        .to_floor::<u64>()
+        .min(reserve_ctokens_owned);
+
+    if ctokens_to_send_to_user == 0 {
+        return err!(KaminoVaultError::WithdrawResultsInZeroShares);
+    }
+
+   
+   
+    let actual_liquidity_value_f = exchange_rate
+        .fraction_collateral_to_liquidity_ceil(Fraction::from_num(ctokens_to_send_to_user));
+
+   
+   
+    let withdrawal_penalty_f = common::get_withdrawal_penalty_for_fraction_amount_exclusive(
+        vault_state,
+        global_config,
+        actual_liquidity_value_f,
+    );
+    let theoretical_amount_to_send_to_user_f = actual_liquidity_value_f + withdrawal_penalty_f;
+
+    let shares_to_burn = common::calculate_shares_to_burn(
+        theoretical_amount_to_send_to_user_f,
+        vault_state.shares_issued,
+        current_vault_aum,
+        shares_amount,
+    );
+
+    if shares_to_burn == 0 {
+        return err!(KaminoVaultError::WithdrawResultsInZeroShares);
+    }
+
+    kmsg!(
+        "Total liquidity for user {}",
+        actual_liquidity_value_f.to_display()
+    );
+    kmsg!("CTokens to send to user {}", ctokens_to_send_to_user);
+    kmsg!("Shares to burn {}", shares_to_burn);
+    kmsg!("Withdrawal penalty {}", withdrawal_penalty_f.to_display());
+
+    if actual_liquidity_value_f.to_floor::<u64>() <= vault_state.min_withdraw_amount {
+        return err!(KaminoVaultError::WithdrawAmountBelowMinimum);
+    }
+
+   
+    common::burn_shares(vault_state, shares_to_burn);
+    common::withdraw_from_vault_allocation(vault_state, ctokens_to_send_to_user, reserve_address)?;
+
+   
+    let net_amount_withdrawn_from_vault = actual_liquidity_value_f;
+    common::update_prev_aum(
+        vault_state,
+        current_vault_aum - net_amount_withdrawn_from_vault,
+    );
+
+    Ok(RedeemInKindEffects {
+        shares_to_burn,
+        ctokens_to_send_to_user,
+        actual_liquidity_value: actual_liquidity_value_f,
+        vault_aum_before: current_vault_aum,
+    })
+}
+
+pub fn charge_fees(vault: &mut VaultState, invested: &Invested, timestamp: u64) -> Result<()> {
+    if vault.last_fee_charge_timestamp == 0 {
+        vault.last_fee_charge_timestamp = timestamp;
+        return Ok(());
+    }
+
+    let seconds_passed = timestamp.saturating_sub(vault.last_fee_charge_timestamp);
+
+    let new_aum = vault.compute_aum(&invested.total).unwrap_or(Fraction::ZERO);
+    let prev_aum = vault.get_prev_aum();
+
+   
+    crate::kmsg_sized!(
+        300,
+        "prev_aum {} new_aum {} seconds_passed {}",
+        prev_aum.to_display(),
+        new_aum.to_display(),
+        seconds_passed
+    );
+
+   
+    let mgmt_charge = if seconds_passed == 0 {
+        Fraction::ZERO
+    } else {
+       
+        let mgmt_fee_yearly = Fraction::from_bps(vault.management_fee_bps);
+        let mgmt_fee = mgmt_fee_yearly * u128::from(seconds_passed)
+            / SECONDS_PER_YEAR.ceil().to_u128().unwrap();
+        let mgmt_charge = Fraction::from(prev_aum).mul(mgmt_fee);
+
+        crate::kmsg_sized!(
+            250,
+            "mgmt_charge {} mgmt_fee {}",
+            mgmt_charge.to_display(),
+            mgmt_fee.to_display()
+        );
+
+        mgmt_charge
+    };
+
+   
+    let earned_interest = new_aum.saturating_sub(prev_aum);
+    let perf_charge = Fraction::from_bps(vault.performance_fee_bps) * earned_interest;
+
+    crate::kmsg_sized!(
+        250,
+        "perf_charge {} earned_interest {}",
+        perf_charge.to_display(),
+        earned_interest.to_display()
+    );
+
+    vault.set_cumulative_mgmt_fees(vault.get_cumulative_mgmt_fees().saturating_add(mgmt_charge));
+    vault.set_cumulative_perf_fees(vault.get_cumulative_perf_fees().saturating_add(perf_charge));
+    vault.set_cumulative_earned_interest(
+        vault
+            .get_cumulative_earned_interest()
+            .saturating_add(earned_interest),
+    );
+
+    let new_fees = (mgmt_charge + perf_charge).min(new_aum);
+    let pending_fees = vault.get_pending_fees() + new_fees;
+    vault.set_pending_fees(pending_fees);
+    update_prev_aum(vault, new_aum - new_fees);
+    vault.last_fee_charge_timestamp = timestamp;
+
+    Ok(())
+}
+
+
+
+
+pub fn refresh_rewards(vault: &mut VaultState, current_timestamp: u64) -> Result<u64> {
+    let reward_info = &mut vault.reward_info;
+
+    if !reward_info.has_active_rewards() {
+        return Ok(0);
+    }
+
+    if reward_info.last_issuance_ts == 0 {
+        reward_info.last_issuance_ts = current_timestamp;
+        return Ok(0);
+    }
+
+    let seconds_passed = current_timestamp.saturating_sub(reward_info.last_issuance_ts);
+    if seconds_passed == 0 {
+        return Ok(0);
+    }
+
+    let pending_rewards = reward_info.reward_per_second.saturating_mul(seconds_passed);
+
+    let rewards_to_distribute = pending_rewards.min(reward_info.rewards_available);
+
+    if rewards_to_distribute > 0 {
+        vault.token_available += rewards_to_distribute;
+
+        reward_info.rewards_available -= rewards_to_distribute;
+
+        reward_info.cumulative_rewards_distributed_analytics += rewards_to_distribute;
+
+        kmsg!(
+            "Rewards distributed={}, rps={}, seconds_passed={}",
+            rewards_to_distribute,
+            reward_info.reward_per_second,
+            seconds_passed
+        );
+    }
+
+    reward_info.last_issuance_ts = current_timestamp;
+
+    Ok(rewards_to_distribute)
+}
+
+pub fn topup_rewards(vault: &mut VaultState, amount: u64, current_ts: u64) -> Result<()> {
+    require!(amount > 0, KaminoVaultError::RewardTopupAmountZero);
+
+    refresh_rewards(vault, current_ts)?;
+
+    vault.reward_info.rewards_available += amount;
+
+    if vault.reward_info.has_active_rewards() {
+        vault.reward_info.last_issuance_ts = current_ts;
+    }
+
+    Ok(())
+}
+
+pub fn withdraw_rewards(vault: &mut VaultState, amount: u64, current_ts: u64) -> Result<u64> {
+    require!(amount > 0, KaminoVaultError::RewardWithdrawAmountZero);
+
+    refresh_rewards(vault, current_ts)?;
+
+    let withdraw_amount = std::cmp::min(amount, vault.reward_info.rewards_available);
+    vault.reward_info.rewards_available -= withdraw_amount;
+
+    Ok(withdraw_amount)
+}
+
+pub mod common {
+    use anchor_lang::{error, prelude::AccountInfo, Result};
+    use kamino_lending::{
+        utils::{AnyAccountLoader, FatAccountLoader, FULL_BPS},
+        PriceStatusFlags, Reserve,
+    };
+    use solana_program::pubkey::Pubkey;
+
+    use crate::{
+        operations::klend_operations,
+        utils::{cpi_mem::CpiMemoryLender, fraction_utils::full_mul_fraction_ratio_ceil},
+        VaultAllocation,
+    };
+
+    use super::*;
+
+    pub(crate) const HOLDINGS_DEBUG_LOG_CAPACITY: usize = 2000;
+    pub(crate) const HOLDINGS_DEBUG_LOG_MAX_ALLOCATIONS: usize = 7;
+
+    pub fn get_max_depositable_in_vault(vault: &VaultState, holdings_aum: Fraction) -> u64 {
+        let deposit_cap = if vault.deposit_cap == 0 {
+            u64::MAX
+        } else {
+            vault.deposit_cap
+        };
+        let holdings_aum_rounded_up = holdings_aum.try_to_ceil::<u64>().unwrap_or(u64::MAX);
+
+        deposit_cap.saturating_sub(holdings_aum_rounded_up)
+    }
+
+
+    pub fn refresh_allocation_reserve_accounts<'a, 'info>(
+        cpi_mem: &mut CpiMemoryLender<'info>,
+        vault: &VaultState,
+        remaining_accounts: &'a [AccountInfo<'info>],
+        slot: Slot,
+    ) -> Result<impl Iterator<Item = FatAccountLoader<'info, Reserve>> + Clone + 'a>
+    where
+        'info: 'a,
+    {
+        let reserves_count = vault.get_reserves_count();
+        let reserves_iter = allocation_reserve_accounts_iter(remaining_accounts, reserves_count);
+
+        check_allocation_reserve_accounts_match(vault, reserves_iter.clone())?;
+        klend_operations::cpi_refresh_reserves(
+            cpi_mem,
+            remaining_accounts.iter().take(reserves_count),
+            reserves_count,
+        )?;
+        check_matched_allocation_reserves_refreshed(vault, reserves_iter.clone(), slot)?;
+
+        Ok(reserves_iter)
+    }
+
+    fn allocation_reserve_accounts_iter<'a, 'info>(
+        remaining_accounts: &'a [AccountInfo<'info>],
+        reserves_count: usize,
+    ) -> impl Iterator<Item = FatAccountLoader<'info, Reserve>> + Clone + 'a
+    where
+        'info: 'a,
+    {
+        remaining_accounts
+            .iter()
+            .take(reserves_count)
+            .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap())
+    }
+
+    pub(crate) fn check_allocation_reserve_accounts_match<'info, T>(
+        vault: &VaultState,
+        mut reserves_iter: impl Iterator<Item = T>,
+    ) -> Result<()>
+    where
+        T: AnyAccountLoader<'info, Reserve>,
+    {
+        for allocation_state in vault.vault_allocation_strategy.iter() {
+            if allocation_state.reserve == Pubkey::default() {
+                continue;
+            }
+
+            let Some(reserve) = reserves_iter.next() else {
+                return err!(KaminoVaultError::ReserveNotProvidedInTheAccounts);
+            };
+
+            if reserve.get_pubkey() != allocation_state.reserve {
+                return err!(KaminoVaultError::ReserveAccountAndKeyMismatch);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn check_matched_allocation_reserves_refreshed<'info, T>(
+        vault: &VaultState,
+        mut reserves_iter: impl Iterator<Item = T>,
+        slot: Slot,
+    ) -> Result<()>
+    where
+        T: AnyAccountLoader<'info, Reserve>,
+    {
+        for allocation_state in vault.vault_allocation_strategy.iter() {
+            if allocation_state.reserve == Pubkey::default() {
+                continue;
+            }
+
+            let Some(reserve) = reserves_iter.next() else {
+                return err!(KaminoVaultError::ReserveNotProvidedInTheAccounts);
+            };
+
+            let reserve_key = reserve.get_pubkey();
+            let reserve = reserve
+                .get()
+                .map_err(|_| error!(KaminoVaultError::CouldNotDeserializeAccountAsReserve))?;
+
+            if reserve
+                .last_update
+                .is_stale(slot, PriceStatusFlags::NONE)
+                .unwrap()
+            {
+                msg!("Reserve {} is stale", reserve_key);
+                return err!(KaminoVaultError::ReserveIsStale);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn get_shares_to_mint(
+        holdings_aum: Fraction,
+        user_token_amount: u64,
+        shares_issued: u64,
+    ) -> Result<u64> {
+        if shares_issued == 0 {
+            return Ok(user_token_amount);
+        }
+
+        if shares_issued != 0 && holdings_aum == Fraction::ZERO {
+            return err!(KaminoVaultError::VaultAUMZero);
+        }
+
+        let shares_to_mint = Fraction::from(shares_issued)
+            .full_mul_int_ratio(user_token_amount, holdings_aum.to_ceil::<u64>());
+
+        Ok(shares_to_mint.to_floor())
+    }
+
+    fn ctoken_cap_to_liquidity_or_uncapped(reserve: &Reserve, ctoken_cap: CtokenCap) -> Fraction {
+        if ctoken_cap.is_uncapped() {
+            return Fraction::from(u64::MAX);
+        }
+
+        reserve
+            .collateral_exchange_rate()
+            .saturating_fraction_collateral_to_liquidity(Fraction::from(ctoken_cap.raw()))
+    }
+
+
+
+
+
+
+    fn compute_invested_reserve(
+        allocation_state: &VaultAllocation,
+        reserve: &Reserve,
+    ) -> Result<InvestedReserve> {
+        let ctoken_amount = allocation_state.ctoken_allocation;
+        let exchange_rate = reserve.collateral_exchange_rate();
+
+        let liquidity_amount = exchange_rate
+            .checked_fraction_collateral_to_liquidity(ctoken_amount.into())
+            .ok_or(error!(KaminoVaultError::MathOverflow))?;
+        let ctoken_cap_in_liquidity =
+            ctoken_cap_to_liquidity_or_uncapped(reserve, allocation_state.ctoken_allocation_cap());
+
+        Ok(InvestedReserve {
+            reserve: allocation_state.reserve,
+            liquidity_amount,
+            ctoken_amount,
+            target_weight: allocation_state.target_allocation_weight,
+            ctoken_cap_in_liquidity,
+        })
+    }
+
+    pub fn amounts_invested<'info, T>(
+        vault: &VaultState,
+        reserves_iter: impl Iterator<Item = T>,
+    ) -> Result<Invested>
+    where
+        T: AnyAccountLoader<'info, Reserve>,
+    {
+        let mut invested = Invested::default();
+        amounts_invested_into(vault, reserves_iter, &mut invested)?;
+
+        Ok(invested)
+    }
+
+
+
+
+
+    fn amounts_invested_into<'info, T>(
+        vault: &VaultState,
+        mut reserves_iter: impl Iterator<Item = T>,
+        invested: &mut Invested,
+    ) -> Result<()>
+    where
+        T: AnyAccountLoader<'info, Reserve>,
+    {
+        invested.reset();
+        let mut total = Fraction::ZERO;
+
+        for (allocation_state, computed_invested_allocation) in vault
+            .vault_allocation_strategy
+            .iter()
+            .zip(invested.allocations.iter_mut())
+        {
+            if allocation_state.reserve == Pubkey::default() {
+               
+                continue;
+            }
+
+            let Some(reserve) = reserves_iter.next() else {
+                return err!(KaminoVaultError::ReserveNotProvidedInTheAccounts);
+            };
+            let reserve_key = reserve.get_pubkey();
+
+            let reserve = reserve
+                .get()
+                .map_err(|_| error!(KaminoVaultError::CouldNotDeserializeAccountAsReserve))?;
+
+            if reserve_key != allocation_state.reserve {
+                return err!(KaminoVaultError::ReserveAccountAndKeyMismatch);
+            }
+
+            let computed_invested_reserve = compute_invested_reserve(allocation_state, &reserve)?;
+            total += computed_invested_reserve.liquidity_amount;
+            *computed_invested_allocation = computed_invested_reserve;
+        }
+
+        invested.total = total;
+
+        Ok(())
+    }
+
+
+
+
+
+    fn recompute_invested_reserve_into(
+        vault: &VaultState,
+        reserve_address: &Pubkey,
+        reserve: &Reserve,
+        invested: &mut Invested,
+    ) -> Result<()> {
+        let Some(reserve_idx) = vault.get_reserve_idx_in_allocation(reserve_address) else {
+            return err!(KaminoVaultError::ReserveNotPartOfAllocations);
+        };
+        let allocation_state = &vault.vault_allocation_strategy[reserve_idx];
+        let computed_invested_allocation = &mut invested.allocations[reserve_idx];
+        let previous_liquidity_amount = computed_invested_allocation.liquidity_amount;
+        let computed_invested_reserve = compute_invested_reserve(allocation_state, reserve)?;
+
+        invested.total =
+            invested.total - previous_liquidity_amount + computed_invested_reserve.liquidity_amount;
+        *computed_invested_allocation = computed_invested_reserve;
+
+        Ok(())
+    }
+
+    pub struct SyncedHoldingsTotals {
+
+        pub aum: Fraction,
+
+        pub total_sum: Fraction,
+    }
+
+
+
+
+
+
+
+
+    #[derive(Default)]
+    pub struct HoldingsBuffer {
+        storage: Box<Holdings>,
+    }
+
+    impl HoldingsBuffer {
+
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+
+
+
+
+
+
+        pub fn compute<'a, 'info, T>(
+            &'a mut self,
+            vault: &VaultState,
+            reserves_iter: impl Iterator<Item = T>,
+        ) -> Result<ComputedHoldings<'a>>
+        where
+            T: AnyAccountLoader<'info, Reserve>,
+        {
+            let holdings = &mut *self.storage;
+            holdings.available =
+                underlying_inventory_into(vault, reserves_iter, &mut holdings.invested)?;
+            holdings.total_sum = Fraction::from(holdings.available) + holdings.invested.total;
+
+            Ok(ComputedHoldings { holdings })
+        }
+
+
+
+
+
+        pub fn compute_once<'info, T>(
+            vault: &VaultState,
+            reserves_iter: impl Iterator<Item = T>,
+        ) -> Result<Box<Holdings>>
+        where
+            T: AnyAccountLoader<'info, Reserve>,
+        {
+            let mut buffer = Self::new();
+            buffer.compute(vault, reserves_iter)?;
+            Ok(buffer.storage)
+        }
+    }
+
+
+
+
+
+
+
+
+    pub struct ComputedHoldings<'a> {
+        holdings: &'a mut Holdings,
+    }
+
+    impl core::ops::Deref for ComputedHoldings<'_> {
+        type Target = Holdings;
+
+        fn deref(&self) -> &Self::Target {
+            self.holdings
+        }
+    }
+
+    impl ComputedHoldings<'_> {
+
+
+
+
+
+
+        pub fn sync_reserve(
+            &mut self,
+            vault: &VaultState,
+            reserve_address: &Pubkey,
+            reserve: &Reserve,
+        ) -> Result<SyncedHoldingsTotals> {
+            recompute_invested_reserve_into(
+                vault,
+                reserve_address,
+                reserve,
+                &mut self.holdings.invested,
+            )?;
+            self.holdings.available = vault.token_available;
+            self.holdings.total_sum =
+                Fraction::from(self.holdings.available) + self.holdings.invested.total;
+
+            Ok(SyncedHoldingsTotals {
+                aum: vault.compute_aum(&self.holdings.invested.total)?,
+                total_sum: self.holdings.total_sum,
+            })
+        }
+    }
+
+
+
+
+
+    fn underlying_inventory_into<'info, T>(
+        vault: &VaultState,
+        reserves_iter: impl Iterator<Item = T>,
+        invested: &mut Invested,
+    ) -> Result<u64>
+    where
+        T: AnyAccountLoader<'info, Reserve>,
+    {
+        let available = available_to_invest(vault);
+        amounts_invested_into(vault, reserves_iter, invested)?;
+
+        Ok(available)
+    }
+
+    pub fn available_to_invest(vault: &VaultState) -> u64 {
+        vault.token_available
+    }
+
+    pub fn deposit_into_vault(vault: &mut VaultState, amount: u64) {
+        vault.token_available += amount;
+    }
+
+    pub fn withdraw_from_vault(vault: &mut VaultState, amount: u64) {
+        vault.token_available -= amount;
+    }
+
+    pub fn compute_user_total_received_on_withdraw_fraction(
+        shares_issued: u64,
+        vault_total_holdings: Fraction,
+        shares_to_withdraw: u64,
+    ) -> Fraction {
+        let total_for_user = if shares_issued == shares_to_withdraw {
+            vault_total_holdings
+        } else {
+            vault_total_holdings.full_mul_int_ratio(shares_to_withdraw, shares_issued)
+        };
+        kmsg_sized!(
+            150,
+            "Total for user {} total_sum {}",
+            total_for_user.to_display(),
+            vault_total_holdings.to_display()
+        );
+
+        total_for_user
+    }
+
+    pub fn compute_user_total_received_on_withdraw(
+        shares_issued: u64,
+        vault_total_holdings: Fraction,
+        shares_to_withdraw: u64,
+    ) -> u64 {
+        let total_for_user = compute_user_total_received_on_withdraw_fraction(
+            shares_issued,
+            vault_total_holdings,
+            shares_to_withdraw,
+        )
+        .to_floor();
+        kmsg_sized!(150, "Total for user {} (floored)", total_for_user);
+
+        total_for_user
+    }
+
+    pub struct WithdrawalPenaltyParams {
+        pub penalty_lamports: u64,
+        pub penalty_bps: u64,
+    }
+
+
+
+    pub fn get_withdrawal_penalty_for_fraction_amount_inclusive(
+        vault: &VaultState,
+        global_config: &GlobalConfig,
+        total_amount_withdrawn: Fraction,
+    ) -> Fraction {
+        let WithdrawalPenaltyParams {
+            penalty_lamports,
+            penalty_bps,
+        } = calculate_withdrawal_penalty_params(global_config, vault);
+        let withdrawal_penalty_from_bps =
+            total_amount_withdrawn.full_mul_int_ratio(penalty_bps, FULL_BPS);
+        withdrawal_penalty_from_bps.max(Fraction::from(penalty_lamports))
+    }
+
+    pub fn get_withdrawal_penalty(
+        vault: &VaultState,
+        global_config: &GlobalConfig,
+        total_amount_withdrawn: u64,
+    ) -> u64 {
+        get_withdrawal_penalty_for_fraction_amount_inclusive(
+            vault,
+            global_config,
+            Fraction::from(total_amount_withdrawn),
+        )
+        .to_ceil::<u64>()
+    }
+
+
+
+
+
+
+
+
+
+    pub fn get_withdrawal_penalty_for_fraction_amount_exclusive(
+        vault: &VaultState,
+        global_config: &GlobalConfig,
+        total_amount_withdrawn_without_penalty: Fraction,
+    ) -> Fraction {
+        let WithdrawalPenaltyParams {
+            penalty_lamports,
+            penalty_bps,
+        } = calculate_withdrawal_penalty_params(global_config, vault);
+        let f = Fraction::from_bps(penalty_bps);
+        let withdrawal_penalty_from_bps =
+            total_amount_withdrawn_without_penalty * f / (Fraction::ONE - f);
+        withdrawal_penalty_from_bps.max(Fraction::from(penalty_lamports))
+    }
+
+
+
+    pub fn calculate_withdrawal_penalty_params(
+        global_config: &GlobalConfig,
+        vault: &VaultState,
+    ) -> WithdrawalPenaltyParams {
+        let penalty_lamports = global_config
+            .withdrawal_penalty_lamports
+            .max(vault.withdrawal_penalty_lamports);
+        let penalty_bps = global_config
+            .withdrawal_penalty_bps
+            .max(vault.withdrawal_penalty_bps);
+
+        WithdrawalPenaltyParams {
+            penalty_lamports,
+            penalty_bps,
+        }
+    }
+
+    pub fn compute_amount_to_deposit_from_shares_to_mint(
+        vault_total_shares: u64,
+        vault_total_holdings: Fraction,
+        shares_to_mint: u64,
+    ) -> u64 {
+        if vault_total_shares == 0 {
+            shares_to_mint
+        } else {
+            vault_total_holdings
+                .full_mul_int_ratio_ceil(shares_to_mint, vault_total_shares)
+                .to_ceil()
+        }
+    }
+
+
+    pub fn withdraw_from_accounting(
+        vault: &mut VaultState,
+        available_to_send_to_user: u64,
+        shares_to_burn: u64,
+    ) {
+        common::withdraw_from_vault(vault, available_to_send_to_user);
+        common::burn_shares(vault, shares_to_burn);
+    }
+
+
+
+    pub fn calculate_shares_to_burn(
+        amount_to_send_to_user: Fraction,
+        total_shares_supply: u64,
+        total_vault_aum: Fraction,
+        max_shares_to_burn: u64,
+    ) -> u64 {
+        (full_mul_fraction_ratio_ceil(
+            amount_to_send_to_user,
+            Fraction::from_num(total_shares_supply),
+            total_vault_aum,
+        )
+        .to_ceil::<u64>())
+        .min(max_shares_to_burn)
+    }
+
+    pub fn deposit_into_vault_allocation(
+        vault: &mut VaultState,
+        ctokens: u64,
+        reserve: &Pubkey,
+    ) -> Result<()> {
+        let idx = vault
+            .get_reserve_idx_in_allocation(reserve)
+            .ok_or(error!(KaminoVaultError::CannotFindReserveInAllocations))?;
+
+        vault.get_reserve_allocation_mut(idx)?.ctoken_allocation += ctokens;
+
+        Ok(())
+    }
+
+    pub fn withdraw_from_vault_allocation(
+        vault: &mut VaultState,
+        ctokens: u64,
+        reserve: &Pubkey,
+    ) -> Result<()> {
+        let idx = vault
+            .get_reserve_idx_in_allocation(reserve)
+            .ok_or(error!(KaminoVaultError::CannotFindReserveInAllocations))?;
+
+        vault.get_reserve_allocation_mut(idx)?.ctoken_allocation -= ctokens;
+
+        Ok(())
+    }
+
+    pub fn burn_shares(vault: &mut VaultState, amt: u64) {
+        vault.shares_issued -= amt;
+    }
+
+    pub fn mint_shares(vault: &mut VaultState, amt: u64) {
+        vault.shares_issued += amt;
+    }
+
+    pub fn update_prev_aum(vault: &mut VaultState, aum: Fraction) {
+       
+        vault.set_prev_aum(aum);
+    }
+
+    pub fn update_pending_fees(vault: &mut VaultState, fees: Fraction) {
+        vault.set_pending_fees(fees);
+    }
+
+    pub fn deposit_crank_funds(vault: &mut VaultState, amount: u64) {
+        vault.available_crank_funds += amount;
+    }
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+    pub struct Holdings {
+        pub available: u64,
+        alignment_padding: u64,
+        pub invested: Invested,
+        pub total_sum: Fraction,
+    }
+
+    impl Holdings {
+
+        pub fn log(&self) {
+           
+           
+            if self.invested.populated_allocation_count() <= HOLDINGS_DEBUG_LOG_MAX_ALLOCATIONS {
+                self.log_debug();
+            } else {
+                self.log_data();
+            }
+        }
+
+        #[inline(never)]
+        fn log_debug(&self) {
+            kmsg_sized!(HOLDINGS_DEBUG_LOG_CAPACITY, "holdings {:?}", self);
+        }
+
+        #[inline(never)]
+        fn log_data(&self) {
+            solana_program::log::sol_log_data(&[bytemuck::bytes_of(self)]);
+        }
+    }
+
+    impl fmt::Debug for Holdings {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("Holdings")
+                .field("available", &self.available)
+                .field("invested", &self.invested)
+                .field("total_sum", &self.total_sum.to_display())
+                .finish()
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+    pub struct InvestedReserve {
+        pub reserve: Pubkey,
+        pub liquidity_amount: Fraction,
+        pub ctoken_amount: u64,
+        pub target_weight: u64,
+        pub ctoken_cap_in_liquidity: Fraction,
+    }
+
+    impl fmt::Debug for InvestedReserve {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("InvestedReserve")
+                .field("reserve", &self.reserve)
+                .field("liquidity_amount", &self.liquidity_amount.to_display())
+                .field("ctoken_amount", &self.ctoken_amount)
+                .field("target_weight", &self.target_weight)
+                .field(
+                    "ctoken_cap_in_liquidity",
+                    &self.ctoken_cap_in_liquidity.to_display(),
+                )
+                .finish()
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+    pub struct Invested {
+        pub allocations: [InvestedReserve; MAX_RESERVES],
+        pub total: Fraction,
+    }
+
+    struct InvestedAllocationsDebug<'a>(&'a Invested);
+
+    impl fmt::Debug for InvestedAllocationsDebug<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_list()
+                .entries(self.0.populated_allocations())
+                .finish()
+        }
+    }
+
+    impl fmt::Debug for Invested {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("")
+                .field("total", &self.total.to_display())
+                .field("allocations", &InvestedAllocationsDebug(self))
+                .finish()
+        }
+    }
+
+    impl Invested {
+        fn populated_allocations(&self) -> impl Iterator<Item = &InvestedReserve> {
+            let default_reserve = Pubkey::default();
+
+            self.allocations
+                .iter()
+                .filter(move |allocation| allocation.reserve != default_reserve)
+        }
+
+        fn populated_allocation_count(&self) -> usize {
+            self.populated_allocations().count()
+        }
+
+        pub fn reset(&mut self) {
+            self.total = Fraction::ZERO;
+            for allocation in self.allocations.iter_mut() {
+                *allocation = InvestedReserve::default();
+            }
+        }
+
+        pub fn in_reserve(&self, reserve: &Pubkey) -> &InvestedReserve {
+            self.allocations
+                .iter()
+                .find(|a| a.reserve == *reserve)
+                .ok_or(error!(KaminoVaultError::ReserveNotPartOfAllocations))
+                .unwrap()
+        }
+    }
+}
+
+pub mod string_utils {
+    use anchor_lang::prelude::Pubkey;
+    pub fn encoded_name_to_label(encoded_name: &[u8], mint: Pubkey) -> String {
+        std::str::from_utf8(encoded_name)
+            .map(|x| x.trim_matches(char::from(0)).to_string())
+            .unwrap_or_else(|_| format!("k{}", mint))
+    }
+
+    pub fn slice_to_array_padded(slice: &[u8]) -> [u8; 40] {
+       
+        let mut array = [0u8; 40];
+
+       
+        let len = slice.len().min(40);
+        array[..len].copy_from_slice(&slice[..len]);
+
+        array
+    }
+}

@@ -1,0 +1,38 @@
+[package]
+publish = false
+name = "validator-bonds"
+version = "2.2.1"
+description = "Marinade validator bonds program protecting validators performance"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Marinade.Finance"]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "validator_bonds"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[dev-dependencies]
+bincode = { workspace = true }
+
+[dependencies]
+anchor-lang = { workspace = true, features = ["init-if-needed", "event-cpi"] }
+anchor-spl = { workspace = true, features = ["stake", "mint", "token", "associated_token", "token_2022", "metadata"] }
+solana-program = { workspace = true }
+solana-security-txt = { workspace = true }
+solana-sdk-ids = { workspace = true }
+merkle-tree = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

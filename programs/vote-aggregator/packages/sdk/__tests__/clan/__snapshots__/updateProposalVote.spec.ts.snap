@@ -1,0 +1,99 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`update_proposal_vote instruction Works 1`] = `
+{
+  "data": [
+    22,
+    86,
+    173,
+    132,
+    228,
+    210,
+    48,
+    151,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "5nYvDD2VT4Zx1kxNohfATAAMMxpajEQkaD4vyHrNyGJR",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "5HNh2T1Xv3RNwQuSoUXhdy6UZPr9VYZBHQuWzrGZSUqx",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "GCfsGVkUtbJTXC1uU6qNTktghf1ND4Mn1gqWYHrKU7c3",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "2xmdXeiV9azNt2aW9FTPAuwnrJ2Lb4gZqtHsN1A8EP6v",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "4uynsQ25jPGzpK7ZwFYB5R7Qvy6reXe3pRBpws3sFE8G",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "2TrqzfsojMCXBpR2RoRGf6vJ39hP1fcYZ3qvzTSU5tAc",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "YmoYimqAG2EVcn5RdW9od3jXNNEGRLvg65yCGkuqWMY",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "BFCAhwpbrNZfPtNzGtf14ckeXcDRYCzNC2zBKX8LLCh4",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "J7HEwThZ62S789TdBCATixaNMvovjXnN88qjH4moxSFN",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "CHUSDriSHbrVn8JeAveYC4dgdsxvmtpM4i8rykQkbTvL",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "5mmWyxTexBSM4XLPfSmiNoG5e8rZpGcZoBfyxKE4W9BD",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+    },
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "79RLV4UPM7BWR1WwJmhsCvvM3SVYCJAwWWevATS56X6o",
+    },
+    {
+      "isSigner": true,
+      "isWritable": true,
+      "pubkey": "11111111111111111111111111111111",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "11111111111111111111111111111111",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "3xNbuehooXRpHEbntV4BCwaaMdLHrGcfvjdopTA6idRq",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;

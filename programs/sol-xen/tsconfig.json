@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "typeRoots": ["./node_modules/@types"],
+    "strict": true,
+    "esModuleInterop": true,
+    "lib": ["ESNext", "WebWorker", "scripthost"],
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "target": "ESNext",
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "exclude": [
+    "./node_modules"
+  ]
+}
+

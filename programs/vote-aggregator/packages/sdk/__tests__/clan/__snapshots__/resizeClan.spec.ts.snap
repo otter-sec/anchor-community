@@ -1,0 +1,43 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`resize_clan instruction Works 1`] = `
+{
+  "data": [
+    116,
+    5,
+    156,
+    164,
+    20,
+    220,
+    67,
+    58,
+    176,
+    4,
+    0,
+    0,
+  ],
+  "keys": [
+    {
+      "isSigner": false,
+      "isWritable": true,
+      "pubkey": "21h2D9KgvjsNfzbHvdyUbivGwXMVqAxr6kSh9vgBidMX",
+    },
+    {
+      "isSigner": true,
+      "isWritable": false,
+      "pubkey": "ARhgofNpMqtJwT4KdFN11ELGB3op5Cfgo6APJjrhXVJV",
+    },
+    {
+      "isSigner": true,
+      "isWritable": true,
+      "pubkey": "11111111111111111111111111111111",
+    },
+    {
+      "isSigner": false,
+      "isWritable": false,
+      "pubkey": "11111111111111111111111111111111",
+    },
+  ],
+  "programId": "VoTaGDreyne7jk59uwbgRRbaAzxvNbyNipaJMrRXhjT",
+}
+`;

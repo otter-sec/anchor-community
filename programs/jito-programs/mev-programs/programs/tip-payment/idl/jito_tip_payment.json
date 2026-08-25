@@ -1,0 +1,436 @@
+{
+  "address": "T1pyyaTNZsKv2WcRAB8oVnk93mLJw2XzjtVYqCsaHqt",
+  "metadata": {
+    "name": "jito_tip_payment",
+    "version": "0.1.10",
+    "spec": "0.1.0",
+    "description": "Tip Payment Program",
+    "repository": "https://github.com/jito-foundation/jito-programs"
+  },
+  "instructions": [
+    {
+      "name": "change_block_builder",
+      "docs": [
+        "Changes the block builder. The block builder takes a cut on tips transferred out by",
+        "this program. In order for the block builder to be changed, all previous tips must have been",
+        "drained."
+      ],
+      "discriminator": [
+        134,
+        80,
+        38,
+        137,
+        165,
+        21,
+        114,
+        123
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "tip_receiver",
+          "docs": [
+            "ensure its the one that's expected"
+          ],
+          "writable": true
+        },
+        {
+          "name": "old_block_builder",
+          "docs": [
+            "ensure it's the account that's expected"
+          ],
+          "writable": true
+        },
+        {
+          "name": "new_block_builder",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_0",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_1",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_2",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_3",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_4",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_5",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_6",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_7",
+          "writable": true
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "block_builder_commission",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "change_tip_receiver",
+      "docs": [
+        "Validator should invoke this instruction before executing any transactions that contain tips.",
+        "Validator should also ensure it calls it if there's a fork detected."
+      ],
+      "discriminator": [
+        69,
+        99,
+        22,
+        71,
+        11,
+        231,
+        86,
+        143
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "old_tip_receiver",
+          "docs": [
+            "ensure its the one that's expected"
+          ],
+          "writable": true
+        },
+        {
+          "name": "new_tip_receiver",
+          "writable": true
+        },
+        {
+          "name": "block_builder",
+          "docs": [
+            "ensure it's the account that's expected"
+          ],
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_0",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_1",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_2",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_3",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_4",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_5",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_6",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_7",
+          "writable": true
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "singleton account"
+          ],
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_0",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_1",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_2",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_3",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_4",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_5",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_6",
+          "writable": true
+        },
+        {
+          "name": "tip_payment_account_7",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "_bumps",
+          "type": {
+            "defined": {
+              "name": "InitBumps"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "TipPaymentAccount",
+      "discriminator": [
+        201,
+        33,
+        244,
+        116,
+        224,
+        68,
+        97,
+        40
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "TipsClaimed",
+      "discriminator": [
+        175,
+        220,
+        250,
+        223,
+        98,
+        113,
+        43,
+        55
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ArithmeticError"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidFee"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidTipReceiver"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidBlockBuilder"
+    }
+  ],
+  "types": [
+    {
+      "name": "Config",
+      "docs": [
+        "Stores program config metadata."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tip_receiver",
+            "docs": [
+              "The account claiming tips from the mev_payment accounts."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "block_builder",
+            "docs": [
+              "Block builder that receives a % of fees"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "block_builder_commission_pct",
+            "type": "u64"
+          },
+          {
+            "name": "bumps",
+            "docs": [
+              "Bumps used to derive PDAs"
+            ],
+            "type": {
+              "defined": {
+                "name": "InitBumps"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "InitBumps",
+      "docs": [
+        "Bumps used during initialization"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "u8"
+          },
+          {
+            "name": "tip_payment_account_0",
+            "type": "u8"
+          },
+          {
+            "name": "tip_payment_account_1",
+            "type": "u8"
+          },
+          {
+            "name": "tip_payment_account_2",
+            "type": "u8"
+          },
+          {
+            "name": "tip_payment_account_3",
+            "type": "u8"
+          },
+          {
+            "name": "tip_payment_account_4",
+            "type": "u8"
+          },
+          {
+            "name": "tip_payment_account_5",
+            "type": "u8"
+          },
+          {
+            "name": "tip_payment_account_6",
+            "type": "u8"
+          },
+          {
+            "name": "tip_payment_account_7",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TipPaymentAccount",
+      "docs": [
+        "Account that searchers will need to tip for their bundles to be accepted.",
+        "There will be 8 accounts of this type initialized in order to parallelize bundles."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": []
+      }
+    },
+    {
+      "name": "TipsClaimed",
+      "docs": [
+        "events"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tip_receiver",
+            "type": "pubkey"
+          },
+          {
+            "name": "tip_receiver_amount",
+            "type": "u64"
+          },
+          {
+            "name": "block_builder",
+            "type": "pubkey"
+          },
+          {
+            "name": "block_builder_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}
